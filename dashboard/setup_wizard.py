@@ -126,6 +126,8 @@ def write_env(path: str, values: dict) -> None:
 
 # ---------- questions ----------
 def choose_folder(label: str, options: list, current: str, ask: Callable[[str], str]) -> str:
+    if current and current.startswith("/path/to"):
+        current = ""  # the placeholder from .env.example, not a real folder
     print(f"\n{label}")
     if options:
         for i, p in enumerate(options, 1):

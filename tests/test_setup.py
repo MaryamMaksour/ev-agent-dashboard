@@ -62,6 +62,10 @@ class SetupWizardTests(unittest.TestCase):
         self.assertEqual(env["EVPROTO_LOGS_DIR"], self.logs)
         self.assertEqual(env["VOICE_RUNS_DIR"], "/somewhere")
 
+    def test_placeholder_from_env_example_is_not_offered(self):
+        picked = setup_wizard.choose_folder("x", [self.logs], "/path/to/whatsappai/ev-proto/logs", ask=lambda _q: "")
+        self.assertEqual(picked, "")
+
     def test_short_or_mismatched_password_asks_again(self):
         typed = iter(["short", "long-enough-pass", "different-pass!!", "long-enough-pass", "long-enough-pass"])
         admin = setup_wizard.ask_admin(lambda _q: "", lambda _q: next(typed))
