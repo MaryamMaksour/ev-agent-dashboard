@@ -225,7 +225,14 @@
     const run = d.run;
     $("#runHint").textContent = `${run.calls} calls · models: ${run.models.join(", ")} · modes: ${run.modes.join(", ")}`;
     $("#targetsHint").textContent = `Good enough = field accuracy ≥ ${pct(d.targets.field_accuracy)} and ≥ ${pct(d.targets.pass_rate)} of scenarios passed (same rule as the test report). "Code stepped in" = price guard + post-call fills.`;
-    $("#vModels").innerHTML = d.models.map((x) => `<tr><td class="num">${esc(x.model)}</td><td>${x.verdict ? `<span class="pill ${x.verdict === "GOOD ENOUGH" ? "good" : "crit"}">${esc(x.verdict)}</span>` : '<span class="muted">Chat only</span>'}</td><td class="r num">${x.tests ? `${x.passed}/${x.tests}` : "–"}</td><td class="r num">${pct(x.field_accuracy, 1)}</td><td class="r num">${x.ended_properly}/${x.calls}</td><td class="r num">${secs(x.seconds_per_reply)}</td><td class="r num">${secs(x.seconds_p95)}</td><td class="r num">${x.tool_rejected}/${x.tool_calls}</td><td class="r num">${x.guards + x.post_call_fills}</td><td class="r num">${x.errors}</td></tr>`).join("");
+    const dur = (v) => (v == null ? "–" : v >= 60 ? `${Math.floor(v / 60)} m ${Math.round(v % 60)} s` : `${Number(v).toFixed(1)} s`);
+    $("#vModels").innerHTML = d.models.map((x) => `<tr><td class="num">${esc(x.model)}</td><td>${x.verdict ? `<span class="pill ${x.verdict === "GOOD ENOUGH" ? "good" : "crit"}">${esc(x.verdict)}</span>` : '<span class="muted">Chat only</span>'}</td><td class="r num">${x.tests ? `${x.passed}/${x.tests}` : "–"}</td><td class="r num">${pct(x.field_accuracy, 1)}</td><td class="r num">${x.agent_closed}/${x.calls}</td><td class="r num">${dur(x.duration_median)}</td><td class="r num">${x.tool_rejected}/${x.tool_calls}</td><td class="r num">${x.guards + x.post_call_fills}</td><td class="r num">${x.errors}</td></tr>`).join("");
+    $("#vWaits").innerHTML = d.models.map((x) => `<tr><td class="num">${esc(x.model)}</td><td class="r num">${secs(x.wait_min)}</td><td class="r num">${secs(x.wait_median)}</td><td class="r num">${secs(x.wait_max)}</td><td>${x.slowest ? `<button type="button" class="linkish" data-call="${esc(x.slowest.call)}">${esc(x.slowest.scenario)}</button> <span class="muted">· ${esc(x.slowest.reason)}</span>` : "–"}</td><td class="r num">${x.model_calls_per_reply == null ? "–" : num(x.model_calls_per_reply, 1)}</td><td class="r num">${x.thinking_replies}</td><td class="r num">${x.tool_as_text}</td></tr>`).join("");
+    const models = d.models.map((x) => x.model);
+    $("#vClasses").innerHTML = `<thead><tr><th>Classification</th>${models.map((mo) => `<th class="r">${esc(mo)}</th>`).join("")}<th class="r">Total</th></tr></thead><tbody>` +
+      (d.classification.map((c) => `<tr><td>${esc(c.label)}</td>${models.map((mo) => `<td class="r num">${c.by_model[mo] || 0}</td>`).join("")}<td class="r num"><b>${c.total}</b></td></tr>`).join("") || `<tr><td class="empty">No calls.</td></tr>`) + "</tbody>";
+    $("#slowHint").textContent = `Main reason for each reply that took ${d.slow_reply_seconds} s or more. On a real phone call, people start talking over the agent after about that long.`;
+    hbars($("#vSlow"), d.slow_reasons.map((r) => ({ l: r.label, v: r.count, c: "--s2" })), { empty: `No reply took ${d.slow_reply_seconds} s or more.` });
     const head = `<thead><tr><th>Scenario</th>${d.columns.map((c) => `<th class="cell">${esc(c.model)}<br><span class="muted">${esc(c.mode)}</span></th>`).join("")}</tr></thead>`;
     const body = d.matrix.map((row) => `<tr><td><b>${esc(row.scenario)}</b><br><span class="muted">${esc(row.tests)}</span></td>${row.cells.map((c) => {
       if (!c) return `<td class="cell"><span class="muted">–</span></td>`;
@@ -241,24 +248,44 @@
   async function openCall(id) {
     const c = await api(`/api/voice/call?id=${encodeURIComponent(id)}`);
     const admin = state.me.role === "admin";
+    const dur = (v) => (v == null ? "–" : v >= 60 ? `${Math.floor(v / 60)} m ${Math.round(v % 60)} s` : `${Number(v).toFixed(1)} s`);
     $("#dTitle").textContent = `${c.scenario} · ${c.model}`;
     $("#dMeta").innerHTML = [c.mode, c.lead, when(c.ts), c.tests].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
     const res = c.passed === true ? "Passed" : c.passed === false ? "Failed" : "Chat";
-    let b = `<div class="d-sum"><div><span>Result</span><b>${res}</b></div><div><span>Ended by</span><b>${esc(c.ended_by)}</b></div><div><span>Replies</span><b>${c.agent_turns}</b></div><div><span>Sec / reply</span><b>${secs(c.seconds_per_reply)}</b></div></div>`;
+    const box = (k, v) => `<div><span>${esc(k)}</span><b>${v}</b></div>`;
+    let b = `<div class="d-sum">` + [
+      box("Test", res), box("Classification", esc(c.classification)),
+      box("Agent closed it", c.agent_closed ? "Yes" : `No · ${esc(c.ended_by)}`), box("Call length", dur(c.duration_seconds)),
+      box("Wait: shortest", secs(c.wait_min)), box("Wait: typical", secs(c.wait_median)), box("Wait: longest", secs(c.wait_max)),
+      box("Model calls", c.model_calls == null ? "–" : num(c.model_calls)),
+    ].join("") + `</div>`;
+    if (c.slowest_reason) b += `<div class="note"><b>Longest wait:</b> ${secs(c.wait_max)} · ${esc(c.slowest_reason)}</div>`;
     if (c.wrong_fields.length) b += `<div class="note"><b>Wrong fields:</b> ${esc(c.wrong_fields.join(", "))}</div>`;
+    const waits = c.waits || [];
     if (admin && c.events) {
-      b += `<div class="block"><h4>Conversation</h4><div class="tx">` + c.events.map((e) => {
-        if (e.type === "lead") return `<div class="line lead"><small>Lead · ${esc((e.time || "").slice(11))}</small>${esc(e.text)}</div>`;
-        if (e.type === "agent") return `<div class="line agent"><small>Agent · ${esc((e.time || "").slice(11))} · ${secs(e.model_seconds)}</small>${esc(e.text)}</div>`;
-        if (e.type === "tool") { const bad = /^(Not saved|Unknown tool|Not ended)/.test(e.result || ""); return `<div class="line tool ${bad ? "bad" : ""}">${esc(e.tool)}(${esc(JSON.stringify(e.args || {}))}) → ${esc(e.result)}</div>`; }
+      let i = 0;
+      b += `<div class="block"><h4>Conversation, tools and thinking</h4><div class="tx">` + c.events.map((e) => {
+        if (e.type === "lead") return `<div class="line lead"><small>Lead · ${esc((e.time || "").slice(11, 19))}</small>${esc(e.text)}</div>`;
+        if (e.type === "agent") {
+          const w = waits[i++] || {};
+          const calls = w.model_calls > 1 ? ` · ${w.model_calls} model calls` : "";
+          const think = (e.thinking || []).map((t) => `<details class="think"><summary>Thinking (${t.length} characters, not spoken)</summary><div class="code">${esc(t)}</div></details>`).join("");
+          return `${think}<div class="line agent"><small>Agent · ${esc((e.time || "").slice(11, 19))} · waited ${secs(w.seconds)} · ${esc(w.label || "")}${calls}</small>${esc(e.text)}</div>`;
+        }
+        if (e.type === "tool") {
+          const bad = e.ok === false || /^(Not saved|Unknown tool|Not ended)/.test(e.result || "");
+          return `<div class="line tool ${bad ? "bad" : ""}">${bad ? "✗" : "✓"} ${esc(e.tool)}(${esc(JSON.stringify(e.args || {}))}) → ${esc(e.result)}${e.seconds != null ? ` <span class="muted">· ${secs(e.seconds)}</span>` : ""}</div>`;
+        }
         if (e.type === "note") { const t = e.text || ""; const k = t.startsWith("guard:") ? "guard" : t.startsWith("ERROR") ? "error" : t.startsWith("post-call check:") && t.includes("=") ? "post_call_fill" : ""; return `<div class="line notel ${k}">${esc(t)}</div>`; }
         return "";
       }).join("") + `</div></div>`;
-      if (c.final_row) b += `<div class="block"><h4>CRM row after the call</h4><div class="code">${esc(Object.entries(c.final_row).filter(([, v]) => v !== "" && v != null).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
+      if (c.final_row) b += `<div class="block"><h4>Result saved in the CRM</h4><div class="code">${esc(Object.entries(c.final_row).filter(([, v]) => v !== "" && v != null).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
     } else {
-      b += `<div class="note">The conversation is visible to admins only.</div>`;
+      b += `<div class="block"><h4>Each reply</h4><div class="tbl-wrap"><table><thead><tr><th>#</th><th class="r">Waited</th><th>Why</th><th class="r">Model calls</th></tr></thead><tbody>${waits.map((w, n) => `<tr><td class="num">${n + 1}</td><td class="r num">${secs(w.seconds)}</td><td>${esc(w.label)}</td><td class="r num">${w.model_calls == null ? "–" : w.model_calls}</td></tr>`).join("")}</tbody></table></div></div>`;
+      b += `<div class="note">The conversation, tool calls and thinking are visible to admins only.</div>`;
     }
-    b += `<div class="note"><b>Not saved yet:</b> tokens and model speed per reply, and the prompt version. Phase 1 adds them to the test logs.</div>`;
+    if (waits.length && waits.every((w) => w.reason === "not_recorded")) b += `<div class="note">This call was logged before the voice test recorded timings, so the reason for each wait isn't known. New test runs record it.</div>`;
+    if (c.prompt_version || c.settings) b += `<div class="block"><h4>Version and settings</h4><div class="code">${esc(`prompt ${c.prompt_version || "?"} · code ${c.code_version || "?"}\n` + Object.entries(c.settings || {}).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
     openDrawer(b);
   }
 

@@ -103,6 +103,7 @@ input[type="search"] { border: 1px solid var(--line); background: var(--surface)
 .bars { display: flex; flex-direction: column; gap: 9px; }
 .bar-row { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr) 72px; gap: 10px; align-items: center; font-size: 13px; }
 .bar-row .name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bars.wide .bar-row { grid-template-columns: minmax(0, 270px) minmax(0, 1fr) 56px; }
 .bar-track { height: 12px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
 .bar-row .v { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; }
@@ -160,6 +161,10 @@ tr.click:hover td, tr.click:focus-visible td { background: var(--surface-2); }
 .tx .tool.bad { border-left-color: var(--crit); color: var(--crit-ink); }
 .tx .notel.guard, .tx .notel.post_call_fill { border-left-color: var(--warn); }
 .tx .notel.error { border-left-color: var(--crit); color: var(--crit-ink); }
+.linkish { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+.think { font-size: 12px; color: var(--ink-2); }
+.think summary { cursor: pointer; color: var(--ink-3); }
+.think .code { margin-top: 4px; }
 .tx small { display: block; color: var(--ink-3); font-size: 11px; font-family: var(--mono); }
 
 .tip { position: fixed; z-index: 30; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; padding: 7px 9px; border-radius: 6px; max-width: 260px; line-height: 1.35; }

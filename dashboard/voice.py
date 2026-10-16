@@ -23,6 +23,67 @@ FIELD_KEYS = ["status", "budget_aed", "preferred_area", "property_type", "timeli
 TARGET_FIELD_ACCURACY = 0.95
 TARGET_PASS_RATE = 0.90
 REJECTED_PREFIXES = ("Not saved", "Unknown tool", "Not ended")
+SLOW_REPLY_SECONDS = 1.5  # on a real phone call, people start talking over the agent after about this long
+
+# voice-agent-llm-test llmtest/outcome.py: lead status after the call -> classification (for older logs
+# whose footer doesn't carry it yet). Keep in sync.
+CLASSIFICATION = {
+    "qualified": "Qualified",
+    "interested": "Interested, details missing",
+    "callback": "Callback booked",
+    "not_interested": "Not interested",
+    "do_not_call": "Do not call",
+    "wrong_number": "Wrong number",
+}
+NO_RESULT = "No result saved"
+
+WAIT_REASONS = {
+    "model_loading": "Model was loading (cold start)",
+    "many_model_calls": "Several model calls (tool round trips)",
+    "thinking": "Model wrote hidden thinking",
+    "long_prompt": "Mostly reading the conversation",
+    "long_reply": "Mostly writing the reply",
+    "tools": "Mostly running tools",
+    "server": "Mostly server overhead",
+    "not_recorded": "Not recorded (older log)",
+}
+
+
+def explain_wait(event: dict) -> dict:
+    """How long the lead waited for one agent reply, and the main reason, from the reply's model-call timings."""
+    rounds = event.get("rounds") or []
+    total = float(event.get("reply_seconds") or event.get("model_seconds") or 0)
+    if not rounds:
+        return {"seconds": round(total, 2), "reason": "not_recorded", "label": WAIT_REASONS["not_recorded"],
+                "model_calls": None, "parts": {}}
+    model = sum(float(r.get("seconds") or 0) for r in rounds)
+    load = sum(float(r.get("load_seconds") or 0) for r in rounds)
+    prompt = sum(float(r.get("prompt_seconds") or 0) for r in rounds)
+    gen = sum(float(r.get("generate_seconds") or 0) for r in rounds)
+    parts = {"loading": load, "reading": prompt, "writing": gen,
+             "tools": max(total - model, 0.0), "server": max(model - load - prompt - gen, 0.0)}
+    thinking = sum(int(r.get("thinking_chars") or 0) for r in rounds)
+    tokens_in = sum(int(r.get("prompt_tokens") or 0) for r in rounds)
+    tokens_out = sum(int(r.get("output_tokens") or 0) for r in rounds)
+    if total and load >= 1 and load >= 0.4 * total:
+        reason = "model_loading"
+    elif len(rounds) >= 3:
+        reason = "many_model_calls"
+    elif thinking and total and gen >= 0.4 * total:
+        reason = "thinking"
+    else:
+        main = max(("reading", "writing", "tools", "server"), key=lambda k: parts[k])
+        reason = {"reading": "long_prompt", "writing": "long_reply", "tools": "tools", "server": "server"}[main]
+    label = WAIT_REASONS[reason]
+    if reason == "long_prompt":
+        label += f" ({tokens_in:,} tokens)"
+    elif reason == "long_reply":
+        label += f" ({tokens_out:,} tokens)"
+    elif reason == "many_model_calls":
+        label = f"{len(rounds)} model calls (tool round trips)"
+    return {"seconds": round(total, 2), "reason": reason, "label": label, "model_calls": len(rounds),
+            "parts": {k: round(v, 2) for k, v in parts.items()}, "tokens_in": tokens_in, "tokens_out": tokens_out,
+            "thinking_chars": thinking}
 _RUN_ID = re.compile(r"^\d{8}-\d{6}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._\-/]+$")
 
@@ -58,7 +119,9 @@ def parse_call(path: str, call_id: str, naive_tz) -> dict:
     tools = [e for e in events if e.get("type") == "tool"]
     notes = [e for e in events if e.get("type") == "note"]
     kinds = Counter(_note_kind(n.get("text", "")) for n in notes)
-    secs = [float(e.get("model_seconds") or 0) for e in agent]
+    waits = [explain_wait(e) for e in agent]
+    secs = [w["seconds"] for w in waits]
+    slowest = max(range(len(waits)), key=lambda i: waits[i]["seconds"]) if waits else None
     times = [t for t in (m.parse_ts(e.get("time"), naive_tz) for e in events) if t]
     wrong = list(footer.get("wrong_fields") or []) if footer else []
     try:
@@ -67,6 +130,12 @@ def parse_call(path: str, call_id: str, naive_tz) -> dict:
         final_row = None
     is_test = bool(header.get("scenario"))
     run_id = call_id.split("/", 1)[0]
+    ended_by = footer.get("ended_by") if footer else "incomplete"
+    result = (footer.get("result") if footer else None) or (final_row or {}).get("status") or None
+    duration = footer.get("duration_seconds") if footer else None
+    if duration is None and len(times) > 1:
+        duration = round((times[-1] - times[0]).total_seconds(), 1)
+    rounds = [r for e in agent for r in (e.get("rounds") or [])]
     return {
         "id": call_id,
         "run_id": run_id,
@@ -78,17 +147,36 @@ def parse_call(path: str, call_id: str, naive_tz) -> dict:
         "lead": header.get("lead", ""),
         "ts": times[0] if times else None,
         "ended_at": times[-1] if times else None,
-        "ended_by": footer.get("ended_by") if footer else "incomplete",
+        "ended_by": ended_by,
+        "agent_closed": bool(footer.get("agent_closed", ended_by == "end_call")) if footer else False,
+        "duration_seconds": duration,
+        "result": result,
+        "classification": (footer.get("classification") if footer else None)
+        or (CLASSIFICATION.get(result, NO_RESULT) if footer else "Unfinished log"),
+        "prompt_version": header.get("prompt_version"),
+        "code_version": header.get("code_version"),
+        "settings": header.get("settings"),
         "passed": footer.get("passed") if footer and is_test else None,
         "wrong_fields": wrong,
         "field_accuracy": (len(FIELD_KEYS) - len(wrong)) / len(FIELD_KEYS) if footer and is_test else None,
         "agent_turns": len(agent),
         "lead_turns": sum(1 for e in events if e.get("type") == "lead"),
-        "model_seconds": round(sum(secs), 2),
+        "model_seconds": round(sum(float(e.get("model_seconds") or 0) for e in agent), 2),
         "seconds_per_reply": round(sum(secs) / len(secs), 2) if secs else None,
+        "wait_min": min(secs) if secs else None,
+        "wait_median": m.rnd(m.percentile(secs, 0.5), 2),
+        "wait_max": max(secs) if secs else None,
         "slowest_reply": round(max(secs), 2) if secs else None,
+        "slowest_reason": waits[slowest]["label"] if slowest is not None else None,
+        "waits": waits,
+        "model_calls": len(rounds) or None,
+        "tokens_in": sum(int(r.get("prompt_tokens") or 0) for r in rounds) or None,
+        "tokens_out": sum(int(r.get("output_tokens") or 0) for r in rounds) or None,
+        "thinking_replies": sum(1 for e in agent if e.get("thinking")),
+        "tool_as_text": sum(1 for r in rounds if r.get("tool_calls_as_text")),
         "tool_calls": len(tools),
-        "tool_rejected": sum(1 for t in tools if str(t.get("result", "")).startswith(REJECTED_PREFIXES)),
+        "tool_rejected": sum(1 for t in tools if t.get("ok") is False
+                             or str(t.get("result", "")).startswith(REJECTED_PREFIXES)),
         "tool_names": Counter(t.get("tool", "?") for t in tools),
         "guards": kinds.get("guard", 0),
         "rules": kinds.get("rules", 0),
@@ -101,13 +189,14 @@ def parse_call(path: str, call_id: str, naive_tz) -> dict:
 
 
 def public_call(c: dict, *, with_events: bool, show_text: bool) -> dict:
-    out = {k: v for k, v in c.items() if k not in ("events", "ts", "ended_at", "tool_names", "final_row")}
+    out = {k: v for k, v in c.items() if k not in ("events", "ts", "ended_at", "tool_names", "final_row", "waits")}
     out["ts"] = m.iso(c["ts"])
     out["ended_at"] = m.iso(c["ended_at"])
     out["tool_names"] = dict(c["tool_names"])
     if with_events:
         out["final_row"] = c["final_row"] if show_text else None
         out["events"] = c["events"] if show_text else None
+        out["waits"] = c["waits"]  # timings only, no text
     return out
 
 
@@ -212,8 +301,24 @@ class VoiceTestSource:
             verdict = None
             if tests:
                 verdict = "GOOD ENOUGH" if acc >= TARGET_FIELD_ACCURACY and pass_rate >= TARGET_PASS_RATE else "NOT ENOUGH"
+            waits = [w for c in mc for w in c["waits"]]
+            slow = max(((w, c) for c in mc for w in c["waits"]), key=lambda x: x[0]["seconds"], default=None)
+            durations = [c["duration_seconds"] for c in mc if c["duration_seconds"] is not None]
             models.append({
                 "model": model, "calls": len(mc), "tests": len(tests),
+                "agent_closed": sum(1 for c in mc if c["agent_closed"]),
+                "duration_median": m.rnd(m.percentile(durations, 0.5), 1),
+                "wait_min": min(replies) if replies else None,
+                "wait_median": m.rnd(m.percentile(replies, 0.5), 2),
+                "wait_max": max(replies) if replies else None,
+                "slowest": {"seconds": slow[0]["seconds"], "reason": slow[0]["label"], "call": slow[1]["id"],
+                            "scenario": slow[1]["scenario"]} if slow else None,
+                "slow_reasons": dict(Counter(w["label"] for w in waits if w["seconds"] >= SLOW_REPLY_SECONDS
+                                             ).most_common()),
+                "model_calls_per_reply": m.rnd(sum(w["model_calls"] or 0 for w in waits) / len(waits), 1)
+                if waits and any(w["model_calls"] for w in waits) else None,
+                "thinking_replies": sum(c["thinking_replies"] for c in mc),
+                "tool_as_text": sum(c["tool_as_text"] for c in mc),
                 "passed": sum(1 for c in tests if c["passed"]),
                 "pass_rate": m.rnd(pass_rate, 3), "field_accuracy": m.rnd(acc, 3), "verdict": verdict,
                 "ended_properly": sum(1 for c in mc if c["ended_by"] == "end_call"),
@@ -227,7 +332,13 @@ class VoiceTestSource:
             })
         wrong: dict = defaultdict(Counter)
         ended: dict = defaultdict(Counter)
+        classes: dict = defaultdict(Counter)
+        reasons: Counter = Counter()
         for c in cs:
+            classes[c["classification"]][c["model"]] += 1
+            for w in c["waits"]:
+                if w["seconds"] >= SLOW_REPLY_SECONDS:
+                    reasons[WAIT_REASONS[w["reason"]]] += 1
             for f in c["wrong_fields"]:
                 wrong[f][c["model"]] += 1
             ended[c["ended_by"]][c["model"]] += 1
@@ -249,6 +360,10 @@ class VoiceTestSource:
                                     for f, v in wrong.items()], key=lambda x: -x["total"]),
             "ended_by": sorted([{"ended_by": k, "by_model": dict(v), "total": sum(v.values())}
                                 for k, v in ended.items()], key=lambda x: -x["total"]),
+            "classification": sorted([{"label": k, "by_model": dict(v), "total": sum(v.values())}
+                                      for k, v in classes.items()], key=lambda x: -x["total"]),
+            "slow_reasons": [{"label": k, "count": v} for k, v in reasons.most_common()],
+            "slow_reply_seconds": SLOW_REPLY_SECONDS,
             "calls": [public_call(c, with_events=False, show_text=False)
                       for c in sorted(cs, key=lambda c: (c["model"], c["mode"], c["scenario"]))],
         }
@@ -276,7 +391,7 @@ class VoiceTestSource:
 
 
 def _reply_seconds(c: dict) -> list:
-    return [float(e.get("model_seconds") or 0) for e in c["events"] if e.get("type") == "agent"]
+    return [w["seconds"] for w in c["waits"]]
 
 
 def _cell(c: Optional[dict]) -> Optional[dict]:

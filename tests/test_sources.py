@@ -105,8 +105,8 @@ class VoiceTests(unittest.TestCase):
     def test_runs(self):
         runs = {r["id"]: r for r in self.src.runs()}
         self.assertEqual(set(runs), {"20261015-101500", "chat"})
-        self.assertEqual(runs["20261015-101500"]["calls"], 2)
-        self.assertEqual(runs["20261015-101500"]["passed"], 1)
+        self.assertEqual(runs["20261015-101500"]["calls"], 3)
+        self.assertEqual(runs["20261015-101500"]["passed"], 2)
         self.assertEqual(runs["chat"]["kind"], "chat")
 
     def test_run_detail_matches_report_rules(self):
@@ -115,13 +115,45 @@ class VoiceTests(unittest.TestCase):
         small, big = models["qwen3:8b"], models["qwen3:14b"]
         self.assertEqual(small["verdict"], "NOT ENOUGH")
         self.assertEqual(big["verdict"], "GOOD ENOUGH")
-        self.assertEqual(small["field_accuracy"], 0.75)
-        self.assertEqual((small["tool_rejected"], small["tool_calls"]), (1, 2))
+        self.assertEqual(small["field_accuracy"], 0.875)  # (0.75 + 1.0) / 2 calls
+        self.assertEqual((small["tool_rejected"], small["tool_calls"]), (2, 4))
         self.assertEqual((small["guards"], small["post_call_fills"]), (1, 1))
-        self.assertEqual(small["seconds_per_reply"], 3.0)
         self.assertEqual({w["field"] for w in d["wrong_fields"]}, {"status", "budget_aed"})
         self.assertEqual(len(d["matrix"]), 1)
-        self.assertEqual(len(d["matrix"][0]["cells"]), 2)
+        self.assertEqual(len(d["matrix"][0]["cells"]), 3)
+
+    def test_new_log_tracking_fields(self):
+        c = self.src.call("20261015-101500/qwen3_8b/simulated/logs/01_qualified_full")
+        self.assertTrue(c["agent_closed"])
+        self.assertEqual((c["result"], c["classification"]), ("qualified", "Qualified"))
+        self.assertEqual(c["duration_seconds"], 19.0)
+        self.assertEqual((c["wait_min"], c["wait_median"], c["wait_max"]), (0.6, 3.05, 8.1))
+        reasons = [w["reason"] for w in c["waits"]]
+        self.assertEqual(reasons, ["model_loading", "many_model_calls", "thinking", "long_reply"])
+        self.assertEqual(c["slowest_reason"], "Model was loading (cold start)")
+        self.assertEqual(c["model_calls"], 6)
+        self.assertEqual(c["thinking_replies"], 1)
+        self.assertEqual(c["tool_rejected"], 1)
+        self.assertEqual(c["prompt_version"], "1a2b3c4d5e")
+
+    def test_old_logs_still_work(self):
+        c = self.src.call("20261015-101500/qwen3_8b/scripted/logs/01_qualified_full")
+        self.assertEqual(c["waits"][0]["reason"], "not_recorded")
+        self.assertEqual(c["classification"], "Interested, details missing")  # derived from the final CRM row
+        self.assertTrue(c["agent_closed"])
+        self.assertEqual(c["duration_seconds"], 9.0)  # from the first and last event times
+
+    def test_run_level_classification_and_slow_reasons(self):
+        d = self.src.run_detail("20261015-101500")
+        classes = {x["label"]: x["total"] for x in d["classification"]}
+        self.assertEqual(classes["Qualified"], 1)
+        slow = {x["label"]: x["count"] for x in d["slow_reasons"]}
+        self.assertEqual(slow["Model was loading (cold start)"], 1)
+        self.assertEqual(slow["Several model calls (tool round trips)"], 1)
+        small = {m["model"]: m for m in d["models"]}["qwen3:8b"]
+        self.assertEqual(small["wait_max"], 8.1)
+        self.assertEqual(small["slowest"]["reason"], "Model was loading (cold start)")
+        self.assertEqual(small["agent_closed"], 2)
 
     def test_call_lookup_blocks_path_tricks(self):
         good = "20261015-101500/qwen3_8b/scripted/logs/01_qualified_full"

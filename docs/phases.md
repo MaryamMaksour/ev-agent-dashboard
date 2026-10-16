@@ -54,6 +54,8 @@
 
 ### Phase 1: one record per call
 
+**Done** in voice-agent-llm-test `68ac601`: call id, versions, settings, duration, agent closed the call, result, classification, tokens and Ollama timings, local times with UTC offset.
+
 | Field | Today |
 |---|---|
 | Run, model, mode, scenario, lead, start time, how it ended, replies, model seconds | ✅ |
@@ -66,6 +68,8 @@
 | Phone line, recording, speech costs, consent, do-not-call and calling-hours checks | later, with LiveKit and 3CX |
 
 ### Phase 2: the steps inside
+
+**Done** for the text test: each model call's timings and tokens, tool seconds and ok, tool calls written as text, thinking text.
 
 | Step | What to save |
 |---|---|

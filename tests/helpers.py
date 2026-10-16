@@ -81,6 +81,35 @@ def make_voice_runs(folder: str) -> None:
         {"time": "2026-10-15T10:20:03", "type": "agent", "text": "Hi!", "model_seconds": 3.0},
         {"time": "2026-10-15T10:20:09", "type": "footer", "passed": True, "ended_by": "end_call", "final_crm_row": "{}", "wrong_fields": []},
     ])
+    # new log format (voice-agent-llm-test after "Record what the dashboard needs"): timings, tools ok, classification
+    rnd = lambda secs, load, read, write, tin, tout, tools=(), think=0: {  # noqa: E731
+        "seconds": secs, "load_seconds": load, "prompt_seconds": read, "generate_seconds": write,
+        "prompt_tokens": tin, "output_tokens": tout, "tool_calls": list(tools), "tool_calls_as_text": False,
+        "thinking_chars": think}
+    write_call(os.path.join(run, "qwen3_8b", "simulated", "logs", "01_qualified_full.jsonl"), [
+        {"time": "2026-10-15T10:30:00+04:00", "type": "header", "call_id": "abc123def456", "model": "qwen3:8b",
+         "mode": "simulated", "scenario": "01_qualified_full", "tests": "Qualified", "lead": "L001 Sarah",
+         "prompt_version": "1a2b3c4d5e", "code_version": "68ac601", "settings": {"temperature": 0.2}},
+        {"time": "2026-10-15T10:30:01+04:00", "type": "lead", "text": "Hello?"},
+        {"time": "2026-10-15T10:30:09+04:00", "type": "agent", "text": "Hi!", "model_seconds": 8.0, "reply_seconds": 8.1,
+         "rounds": [rnd(8.0, 6.5, 0.5, 0.9, 900, 20)]},                                   # cold start
+        {"time": "2026-10-15T10:30:10+04:00", "type": "lead", "text": "Two million, Marina, apartment, soon."},
+        {"time": "2026-10-15T10:30:11+04:00", "type": "tool", "tool": "update_lead", "args": {"budget_aed": 2000000},
+         "result": "Saved: budget_aed.", "seconds": 0.01, "ok": True},
+        {"time": "2026-10-15T10:30:12+04:00", "type": "tool", "tool": "update_lead", "args": {"property_type": "castle"},
+         "result": "Not saved: bad type", "seconds": 0.0, "ok": False},
+        {"time": "2026-10-15T10:30:14+04:00", "type": "agent", "text": "Great.", "model_seconds": 4.0, "reply_seconds": 4.1,
+         "rounds": [rnd(1.3, 0, 0.3, 0.9, 1200, 30, ["update_lead"]), rnd(1.4, 0, 0.4, 0.9, 1250, 30, ["update_lead"]),
+                    rnd(1.3, 0, 0.4, 0.8, 1300, 25)]},                                     # 3 model calls
+        {"time": "2026-10-15T10:30:15+04:00", "type": "lead", "text": "Bye"},
+        {"time": "2026-10-15T10:30:17+04:00", "type": "agent", "text": "Goodbye!", "model_seconds": 2.0, "reply_seconds": 2.0,
+         "rounds": [rnd(2.0, 0, 0.2, 1.7, 1400, 60, [], think=300)], "thinking": ["the lead is done"]},  # thinking
+        {"time": "2026-10-15T10:30:18+04:00", "type": "agent", "text": "(no spoken reply)", "model_seconds": 0.6,
+         "reply_seconds": 0.6, "rounds": [rnd(0.6, 0, 0.1, 0.4, 1450, 8, ["end_call"])]},  # fast
+        {"time": "2026-10-15T10:30:19+04:00", "type": "footer", "duration_seconds": 19.0, "passed": True,
+         "ended_by": "end_call", "agent_closed": True, "ending": "Agent closed the call", "result": "qualified",
+         "classification": "Qualified", "final_crm_row": "{\"status\": \"qualified\"}", "wrong_fields": []},
+    ])
     write_call(os.path.join(folder, "chat", "manual.jsonl"), [
         {"time": "2026-10-15T11:00:00", "type": "header", "model": "qwen3:8b", "lead": "L013 Test"},
         {"time": "2026-10-15T11:00:05", "type": "agent", "text": "Hi", "model_seconds": 1.5},

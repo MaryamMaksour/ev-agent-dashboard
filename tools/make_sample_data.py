@@ -124,25 +124,52 @@ def make_voice(folder: str, rnd: random.Random) -> None:
                     def add(e):
                         nonlocal t
                         t += timedelta(seconds=rnd.randint(2, 9))
-                        ev.append({"time": t.isoformat(timespec="seconds"), **e})
+                        ev.append({"time": t.isoformat(timespec="seconds") + "+04:00", **e})
+
+                    def reply(text, calls=1, cold=False, think=False):
+                        rounds, total = [], 0.0
+                        for k in range(calls):
+                            load = round(rnd.uniform(4, 9), 2) if cold and k == 0 else 0.0
+                            read = round(speed * rnd.uniform(0.15, 0.4), 2)
+                            write = round(speed * rnd.uniform(0.4, 0.9) * (1.8 if think else 1), 2)
+                            secs_ = round(load + read + write + rnd.uniform(0.02, 0.1), 2)
+                            total += secs_
+                            rounds.append({"seconds": secs_, "load_seconds": load, "prompt_seconds": read,
+                                           "generate_seconds": write, "prompt_tokens": rnd.randint(800, 2400),
+                                           "output_tokens": rnd.randint(12, 60), "tool_calls": ["update_lead"] if k < calls - 1 else [],
+                                           "tool_calls_as_text": False, "thinking_chars": 240 if think else 0})
+                        e = {"type": "agent", "text": text, "model_seconds": round(total, 2),
+                             "reply_seconds": round(total + 0.01 * calls, 2), "rounds": rounds}
+                        if think:
+                            e["thinking"] = ["The lead gave a budget; ask about the area next."]
+                        add(e)
                     add({"type": "header", "model": model, "mode": mode, "scenario": sid, "tests": tests, "lead": lead, "simulated_now": "2026-10-14T10:00"})
                     add({"type": "lead", "text": "Hello?"})
-                    add({"type": "agent", "text": "Hi, this is Sara from Bayari Investments. Is now a good time?", "model_seconds": round(speed * rnd.uniform(0.7, 1.6), 2)})
+                    reply("Hi, this is Sara from Bayari Investments. Is now a good time?", cold=(sid == VOICE_SCENARIOS[0][0]))
                     add({"type": "lead", "text": "Yes, go ahead."})
                     if rnd.random() > skill:
-                        add({"type": "tool", "tool": "update_lead", "args": {"property_type": "castle"}, "result": "Not saved: property_type must be one of apartment, villa, townhouse, penthouse, plot."})
-                    add({"type": "tool", "tool": "update_lead", "args": {"budget_aed": 2000000}, "result": "Saved: budget_aed."})
+                        add({"type": "tool", "tool": "update_lead", "args": {"property_type": "castle"}, "result": "Not saved: property_type must be one of apartment, villa, townhouse, penthouse, plot.", "seconds": 0.0, "ok": False})
+                    add({"type": "tool", "tool": "update_lead", "args": {"budget_aed": 2000000}, "result": "Saved: budget_aed.", "seconds": 0.01, "ok": True})
                     add({"type": "note", "text": "rules set: status=interested"})
-                    add({"type": "agent", "text": "Great. Which area do you prefer?", "model_seconds": round(speed * rnd.uniform(0.7, 2.2), 2)})
+                    reply("Great. Which area do you prefer?", calls=rnd.choice([1, 2, 2, 3]), think=rnd.random() > skill + 0.04)
                     if rnd.random() > skill + 0.05:
                         add({"type": "note", "text": "guard: removed 'Prices start from AED 1.2 million.'"})
-                    add({"type": "tool", "tool": "end_call", "args": {"summary": "Interested."}, "result": "Call ended."})
-                    add({"type": "agent", "text": "Thank you, goodbye!", "model_seconds": round(speed * rnd.uniform(0.6, 1.2), 2)})
+                    add({"type": "tool", "tool": "end_call", "args": {"summary": "Interested."}, "result": "Call ended.", "seconds": 0.0, "ok": True})
+                    reply("Thank you, goodbye!")
                     wrong = [] if rnd.random() < skill else rnd.sample(FIELDS, rnd.randint(1, 2))
                     if rnd.random() > skill and wrong:
                         add({"type": "note", "text": "post-call check: filled timeline=6 months"})
-                    add({"type": "footer", "passed": not wrong, "ended_by": "end_call" if rnd.random() < skill + 0.08 else "max_turns",
-                         "final_crm_row": json.dumps({"lead_id": lead.split()[0], "status": "interested", "budget_aed": "2000000"}), "wrong_fields": wrong})
+                    ended = "end_call" if rnd.random() < skill + 0.08 else "max_turns"
+                    status = {"01": "qualified", "02": "not_interested", "03": "callback", "04": "do_not_call",
+                              "05": "wrong_number", "06": "interested", "07": "qualified", "08": "callback"}[sid[:2]]
+                    if wrong and rnd.random() < 0.5:
+                        status = "interested"
+                    add({"type": "footer", "duration_seconds": round((t - base).total_seconds() % 90 + 25, 1),
+                         "passed": not wrong, "ended_by": ended, "agent_closed": ended == "end_call",
+                         "result": status, "classification": {"qualified": "Qualified", "interested": "Interested, details missing",
+                         "callback": "Callback booked", "not_interested": "Not interested", "do_not_call": "Do not call",
+                         "wrong_number": "Wrong number"}[status],
+                         "final_crm_row": json.dumps({"lead_id": lead.split()[0], "status": status, "budget_aed": "2000000"}), "wrong_fields": wrong})
                     with open(os.path.join(logs, sid + ".jsonl"), "w", encoding="utf-8") as f:
                         for e in ev:
                             f.write(json.dumps(e) + "\n")

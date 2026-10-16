@@ -109,10 +109,17 @@
           <div class="card-head"><h2>Test run</h2><select id="runSelect" aria-label="Test run"></select></div>
           <div class="hint" id="runHint"></div>
         </div>
-        <div class="card"><h2>Models in this run</h2><div class="hint" id="targetsHint"></div>
-          <div class="tbl-wrap"><table><thead><tr><th>Model</th><th>Verdict</th><th class="r">Passed</th><th class="r">Field accuracy</th><th class="r">Ended properly</th><th class="r">Sec / reply</th><th class="r">Slowest 5%</th><th class="r">Tools rejected</th><th class="r">Code stepped in</th><th class="r">Errors</th></tr></thead><tbody id="vModels"></tbody></table></div>
+        <div class="card"><h2>Results per model</h2><div class="hint" id="targetsHint"></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Model</th><th>Verdict</th><th class="r">Passed</th><th class="r">Field accuracy</th><th class="r">Agent closed the call</th><th class="r">Typical call length</th><th class="r">Tools rejected</th><th class="r">Code stepped in</th><th class="r">Errors</th></tr></thead><tbody id="vModels"></tbody></table></div>
+        </div>
+        <div class="card"><h2>Waiting for the agent to answer</h2><div class="hint">How long the lead waited after speaking, per reply: every model call plus every tool</div>
+          <div class="tbl-wrap"><table><thead><tr><th>Model</th><th class="r">Shortest</th><th class="r">Typical</th><th class="r">Longest</th><th>Longest reply, and why</th><th class="r">Model calls / reply</th><th class="r">Replies with thinking</th><th class="r">Tool calls as text</th></tr></thead><tbody id="vWaits"></tbody></table></div>
         </div>
         <div class="grid">
+          <div class="card c6"><h2>How calls were classified</h2><div class="hint">From the lead's status after the call</div>
+            <div class="tbl-wrap"><table id="vClasses"></table></div>
+          </div>
+          <div class="card c6"><h2>Why replies are slow</h2><div class="hint" id="slowHint"></div><div class="bars wide" id="vSlow"></div></div>
           <div class="card c8"><h2>Scenario results</h2><div class="hint">Click a cell to read the call</div>
             <div class="tbl-wrap"><table class="matrix" id="vMatrix"></table></div>
           </div>

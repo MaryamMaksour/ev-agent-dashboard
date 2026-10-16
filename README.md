@@ -24,7 +24,7 @@ See [docs/phases.md](docs/phases.md) for what each phase adds.
 |---|---|
 | **Overview** | Whether each agent's data is found and how fresh it is · WhatsApp questions, cost, answer time · voice test results · questions and cost per day · when the agents are used (weekday × hour, UAE time) · what isn't tracked yet |
 | **WhatsApp agent** | Questions, people, Arabic share · how questions ended · typical and slowest answer time · cost per question · top users · models · most cited sources · every question with search and filters · one question in detail |
-| **Voice agent tests** | Pick a test run · per model: verdict (same rule as the test report), passed scenarios, field accuracy, seconds per reply, rejected tool calls, how often the code stepped in · scenario × model grid · the fields models get wrong most · one call with the full conversation, tool calls and the final CRM row |
+| **Voice agent tests** | Pick a test run · per model: verdict (same rule as the test report), passed scenarios, field accuracy, **whether the agent closed the call**, typical call length, rejected tool calls, how often the code stepped in · **waiting time per reply: shortest / typical / longest, and why** · **call classification** · why replies are slow · scenario × model grid · the fields models get wrong most · one call with the conversation, every tool call (accepted or rejected, with its time), any thinking, and the result saved in the CRM |
 | **Logins** (admins) | Login attempts on the WhatsApp agent, failures per day, most failed identities and IPs |
 
 ### Worked out from saved data (until Phase 1 saves the real values)
@@ -36,6 +36,8 @@ See [docs/phases.md](docs/phases.md) for what each phase adds.
 | **Doubted** | The next message within 3 minutes was "are you sure?", "double check", "متأكد"… |
 | **Slow** | Answer took more than 10 seconds |
 | **Voice field accuracy** | 8 checked fields minus the wrong ones in each call's footer, as in `llmtest/evaluate.py` |
+| **Why a reply was slow** | From that reply's model-call timings: model loading ≥ 40% of the wait → *cold start*; 3+ model calls → *tool round trips*; thinking and writing ≥ 40% → *hidden thinking*; otherwise the biggest part: *reading the conversation*, *writing the reply*, *running tools* or *server overhead*. "Slow" means 1.5 s or more. Logs from before the voice test recorded timings show *not recorded*. |
+| **Call classification** | The lead's status after the call: Qualified · Interested, details missing · Callback booked · Not interested · Do not call · Wrong number · No result saved |
 
 ---
 
