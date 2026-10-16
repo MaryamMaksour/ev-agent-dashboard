@@ -11,8 +11,11 @@ SLOW_ANSWER_SECONDS = 10     # a WhatsApp answer slower than this counts as "slo
 REPHRASE_WINDOW_SECONDS = 180  # same person, similar question within this window = "asked again"
 
 
-def load_dotenv(path: str) -> None:
-    """Minimal .env reader: KEY=VALUE lines, # comments. Real environment variables win."""
+def load_dotenv(path: str, override: bool = False, protect: frozenset = frozenset()) -> None:
+    """Minimal .env reader: KEY=VALUE lines, # comments. Real environment variables win.
+
+    override=True replaces values an earlier load_dotenv set, but never the names in `protect`
+    (the variables that were really in the environment before any .env was read)."""
     if not os.path.isfile(path):
         return
     with open(path, encoding="utf-8") as f:
@@ -22,7 +25,10 @@ def load_dotenv(path: str) -> None:
                 continue
             key, value = line.split("=", 1)
             key, value = key.strip(), value.strip().strip('"').strip("'")
-            os.environ.setdefault(key, value)
+            if override and key not in protect:
+                os.environ[key] = value
+            else:
+                os.environ.setdefault(key, value)
 
 
 def _bool(value: str) -> bool:

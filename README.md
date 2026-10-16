@@ -50,19 +50,42 @@ Logins, failed logins and every time an admin opens a question or a call are wri
 
 ---
 
-## Set up on the server
+## Set up on the server (nothing to paste)
+
+**1. Put the code on the server**, either way:
+- **Without typing anything:** on your laptop open the repo on GitHub → **Code** → **Download ZIP**. Copy the ZIP to the server (for example with ManageEngine File Transfer) and unzip it.
+- Or type `git clone https://github.com/MaryamMaksour/ev-agent-dashboard` on the server.
+
+**2. Start it.** In the folder, type:
 
 ```bash
-git clone <this repo> ev-agent-dashboard
-cd ev-agent-dashboard
-cp .env.example .env
-python manage_users.py secret              # copy the output into .env as DASHBOARD_SECRET_KEY
-nano .env                                  # set EVPROTO_LOGS_DIR and VOICE_RUNS_DIR
-python manage_users.py add maryam --role admin --name "Maryam M."
 python server.py
 ```
 
-`server.py` prints whether it found each data folder.
+The first time, it asks a few questions and sets everything up itself:
+
+```
+Made a new secret key.
+Looking for the agents' data on this machine...
+
+WhatsApp agent (ev-proto) logs folder - the one with audit.db:
+  1. /home/shameer/whatsappai/ev-proto/logs
+  Type a number, or type a folder path, or press Enter to skip for now: 1
+
+Voice agent test (voice-agent-llm-test) runs folder:
+  1. /home/.../voice-agent-llm-test/runs
+  Type a number, ...: 1
+
+Admin username [shameer]: maryam
+Display name [maryam]: Maryam M.
+Password for maryam (at least 12 characters, not shown): ************
+Type it again: ************
+```
+
+It writes `.env` and `users.json` (both readable only by you), then starts the dashboard. It also prints whether each data folder was found.
+
+- To change the folders or add another admin later: `python server.py --setup`
+- On Windows, type `py server.py` if `python` isn't found.
 
 The user that runs the dashboard needs **read** access to both folders. It needs no write access to them.
 
@@ -113,10 +136,7 @@ Passwords are stored as PBKDF2-SHA256 hashes in `users.json`, which is git-ignor
 
 ```bash
 python tools/make_sample_data.py      # writes made-up data to sample/ (git-ignored)
-# in .env:
-#   EVPROTO_LOGS_DIR=sample/ev-proto-logs
-#   VOICE_RUNS_DIR=sample/voice-runs
-python server.py
+python server.py --setup              # at the folder questions, type: sample/ev-proto-logs  and  sample/voice-runs
 ```
 
 ## Tests
@@ -137,7 +157,8 @@ They build small data folders in the agents' formats and check:
 
 | File | Job |
 |---|---|
-| `server.py` | Starts the dashboard |
+| `server.py` | Starts the dashboard (runs the setup questions the first time) |
+| `dashboard/setup_wizard.py` | First-run setup: secret key, finds the data folders, first admin |
 | `manage_users.py` | Add, list and remove users; make a secret key |
 | `dashboard/settings.py` | Settings from `.env` / environment |
 | `dashboard/whatsapp.py` | Reads ev-proto's `audit.db` and `conversations.db` |
