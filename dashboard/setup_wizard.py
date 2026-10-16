@@ -45,13 +45,16 @@ def _walk(root: str, max_depth: int):
 
 
 def find_whatsapp_logs(roots: list, max_depth: int = 6) -> list:
-    """Folders that hold ev-proto's audit.db (normally .../ev-proto/logs)."""
-    found = []
+    """ev-proto logs folders: ones holding audit.db, then logs/ next to an ev-proto checkout (app/audit.py)
+    that hasn't answered a question yet - ev-proto creates logs/audit.db on its first answer."""
+    with_data, checkouts = [], []
     for root in roots:
         for dirpath, _dirs, files in _walk(root, max_depth):
             if "audit.db" in files and (os.path.basename(dirpath) == "logs" or "conversations.db" in files):
-                found.append(os.path.abspath(dirpath))
-    return _unique(found)
+                with_data.append(os.path.abspath(dirpath))
+            elif os.path.basename(dirpath) == "app" and {"audit.py", "orchestrator.py"} <= set(files):
+                checkouts.append(os.path.abspath(os.path.join(os.path.dirname(dirpath), "logs")))
+    return _unique(with_data + checkouts)
 
 
 def find_voice_runs(roots: list, max_depth: int = 6) -> list:
@@ -131,7 +134,7 @@ def choose_folder(label: str, options: list, current: str, ask: Callable[[str], 
     print(f"\n{label}")
     if options:
         for i, p in enumerate(options, 1):
-            print(f"  {i}. {p}" + ("" if os.path.isdir(p) else "   (no test runs yet)"))
+            print(f"  {i}. {p}" + ("" if os.path.isdir(p) else "   (no data yet - fills in once the agent runs)"))
         hint = "Type a number, or type a folder path"
     else:
         print("  Not found automatically.")
@@ -145,7 +148,7 @@ def choose_folder(label: str, options: list, current: str, ask: Callable[[str], 
         if not answer:
             return current
         if answer.isdigit() and 1 <= int(answer) <= len(options):
-            return options[int(answer) - 1]  # may not exist yet: the voice test creates runs/ on its first run
+            return options[int(answer) - 1]  # may not exist yet: the agent creates it on its first run
         if os.path.isdir(answer):
             return os.path.abspath(answer)
         print("  That folder doesn't exist. Try again.")

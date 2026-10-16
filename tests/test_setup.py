@@ -62,6 +62,15 @@ class SetupWizardTests(unittest.TestCase):
         self.assertEqual(env["EVPROTO_LOGS_DIR"], self.logs)
         self.assertEqual(env["VOICE_RUNS_DIR"], "/somewhere")
 
+    def test_offers_logs_of_an_ev_proto_checkout_without_data(self):
+        repo = os.path.join(self.tmp.name, "laptop", "me", "ev-proto")
+        os.makedirs(os.path.join(repo, "app"))
+        for name in ("audit.py", "orchestrator.py"):
+            open(os.path.join(repo, "app", name), "w").close()
+        found = setup_wizard.find_whatsapp_logs([self.tmp.name])
+        self.assertEqual(found[0], self.logs)  # folders with data come first
+        self.assertIn(os.path.join(repo, "logs"), found)
+
     def test_placeholder_from_env_example_is_not_offered(self):
         picked = setup_wizard.choose_folder("x", [self.logs], "/path/to/whatsappai/ev-proto/logs", ask=lambda _q: "")
         self.assertEqual(picked, "")

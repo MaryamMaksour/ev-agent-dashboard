@@ -97,6 +97,28 @@ ssh -L 8585:127.0.0.1:8585 <user>@<server>     # then open http://localhost:8585
 
 For everyday use, IT can put it behind HTTPS (nginx or the company's reverse proxy) inside the company network. Then set `DASHBOARD_COOKIE_SECURE=1`. **Do not expose it on the server's public IP**: it shows business, finance and HR answers.
 
+## Run it on your laptop
+
+Until the VPN is ready, the dashboard can run on a laptop. It listens on `127.0.0.1` only, so nothing is opened to the network.
+
+**1. Put the three repos in one folder** (the setup looks next to the dashboard first):
+
+```
+projects/
+├── me/                     ← ev-proto is in me/ev-proto
+├── voice-agent-llm-test/
+└── ev-agent-dashboard/
+```
+
+**2. Start it:** `python server.py` (Windows: `py server.py`, Mac: `python3 server.py`). The setup offers `me/ev-proto/logs` and `voice-agent-llm-test/runs` by number. Then open http://localhost:8585.
+
+**Where the data comes from on a laptop.** The agents' data files are not in git (they hold real questions and answers), so a fresh clone starts empty. The dashboard fills in from either source:
+
+| Source | How | Note |
+|---|---|---|
+| **Run the agents on the laptop** | Ask ev-proto questions locally, or run `python run_tests.py` | ev-proto writes `logs/audit.db` on its first answer. MenaMe HR (Oracle) is only reachable inside the company network. The voice test needs Ollama on the laptop (`OLLAMA_URL`). |
+| **Copy a snapshot from the server** | ManageEngine File Transfer: copy `audit.db` and `conversations.db` into `me/ev-proto/logs/`, and the `runs/` folder into `voice-agent-llm-test/` | These files hold real business, finance and HR answers. Only copy them to an encrypted laptop, and delete them when you're done. |
+
 ### Run as a service (Linux)
 
 ```ini
