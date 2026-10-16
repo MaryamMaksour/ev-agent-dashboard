@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EV Agent Dashboard</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><b>EV Agent Dashboard</b><span>Phase 0 · reads saved data only</span></div>
+    <nav class="nav" aria-label="Pages">
+      <div class="nav-label">Agents</div>
+      <button data-page="overview" aria-current="page"><span class="dot" style="background:var(--accent)"></span>Overview</button>
+      <button data-page="whatsapp"><span class="dot" style="background:var(--s1)"></span>WhatsApp agent</button>
+      <button data-page="voice"><span class="dot" style="background:var(--s2)"></span>Voice agent tests</button>
+      <div class="nav-label" style="margin-top:12px">Security</div>
+      <button data-page="logins" data-admin><span class="dot" style="background:var(--ink-3)"></span>Logins</button>
+    </nav>
+    <div class="rail-foot">
+      <span id="whoami"></span>
+      <form method="post" action="/logout"><button type="submit">Sign out</button></form>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div><h1 id="pageTitle">Overview</h1><div class="sub" id="pageSub"></div></div>
+      <div class="spacer"></div>
+      <div class="seg" role="group" aria-label="Date range" id="range">
+        <button data-range="7" aria-pressed="false">7 days</button>
+        <button data-range="30" aria-pressed="true">30 days</button>
+        <button data-range="90" aria-pressed="false">90 days</button>
+        <button data-range="all" aria-pressed="false">All</button>
+      </div>
+    </div>
+    <div id="error" class="error-box" hidden></div>
+
+    <!-- OVERVIEW -->
+    <section data-view="overview">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="health" id="ovHealth"></div>
+        <div class="kpis" id="ovKpis"></div>
+        <div class="grid">
+          <div class="card c6"><h2>WhatsApp questions per day</h2><div class="hint">All users, UAE time</div><div class="chart" id="ovWaDay"></div></div>
+          <div class="card c6"><h2>WhatsApp cost per day</h2><div class="hint">Claude API cost in AED</div><div class="chart" id="ovWaCost"></div></div>
+          <div class="card c8">
+            <div class="card-head"><h2>When the agents are used</h2>
+              <div class="seg" role="group" aria-label="Agent for heatmap" id="heatSeg">
+                <button data-k="whatsapp" aria-pressed="true">WhatsApp questions</button><button data-k="voice" aria-pressed="false">Voice test calls</button>
+              </div></div>
+            <div class="hint" id="heatHint"></div>
+            <div class="heat" id="heat"></div>
+            <div class="ramp"><span>Fewer</span><span id="rampSw"></span><span>More</span></div>
+          </div>
+          <div class="card c4">
+            <h2>Not tracked yet</h2>
+            <div class="hint">The agents don't save these today. Phase 1 and 2 add them.</div>
+            <ul class="later">
+              <li>WhatsApp: answer type and "confident" (computed, then dropped)</li>
+              <li>WhatsApp: tokens, which tools ran, tool errors</li>
+              <li>WhatsApp: user department, conversation link, feedback</li>
+              <li>Voice: tokens and model speed per reply</li>
+              <li>Voice: prompt version and test settings per run</li>
+              <li>Voice: audio, phone line, recordings (after LiveKit)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHATSAPP -->
+    <section data-view="whatsapp" hidden>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="kpis" id="waKpis"></div>
+        <div class="grid">
+          <div class="card c8"><h2>Questions per day</h2><div class="hint">UAE time</div><div class="chart" id="waDay"></div></div>
+          <div class="card c4">
+            <h2>How questions ended</h2>
+            <div class="hint">Worked out from the saved answer until Phase 1 saves the real answer type</div>
+            <div class="bars" id="waOutcomes"></div>
+          </div>
+          <div class="card c6"><h2>Who uses it most</h2><div class="hint">Top 10 by number of questions</div>
+            <div class="tbl-wrap"><table><thead><tr><th>Person</th><th>Role</th><th class="r">Questions</th><th class="r">Answered</th><th class="r">Cost (AED)</th></tr></thead><tbody id="waUsers"></tbody></table></div>
+          </div>
+          <div class="card c6"><h2>Models</h2><div class="hint">Which model answered, cost and typical time</div>
+            <div class="tbl-wrap"><table><thead><tr><th>Model</th><th class="r">Questions</th><th class="r">Cost (AED)</th><th class="r">Typical time</th></tr></thead><tbody id="waModels"></tbody></table></div>
+            <h2>Most cited sources</h2><div class="bars" id="waModules"></div>
+          </div>
+          <div class="card c12">
+            <div class="card-head"><h2>Questions</h2>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <input type="search" id="waSearch" placeholder="Search question, answer or name" aria-label="Search questions">
+              </div>
+            </div>
+            <div class="chips" id="waFilters"></div>
+            <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Question</th><th>Result</th><th>Signals</th><th class="r">Time</th><th class="r">Cost (AED)</th></tr></thead><tbody id="waRows"></tbody></table></div>
+            <div class="pager" id="waPager"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VOICE -->
+    <section data-view="voice" hidden>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="card">
+          <div class="card-head"><h2>Test run</h2><select id="runSelect" aria-label="Test run"></select></div>
+          <div class="hint" id="runHint"></div>
+        </div>
+        <div class="card"><h2>Models in this run</h2><div class="hint" id="targetsHint"></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Model</th><th>Verdict</th><th class="r">Passed</th><th class="r">Field accuracy</th><th class="r">Ended properly</th><th class="r">Sec / reply</th><th class="r">Slowest 5%</th><th class="r">Tools rejected</th><th class="r">Code stepped in</th><th class="r">Errors</th></tr></thead><tbody id="vModels"></tbody></table></div>
+        </div>
+        <div class="grid">
+          <div class="card c8"><h2>Scenario results</h2><div class="hint">Click a cell to read the call</div>
+            <div class="tbl-wrap"><table class="matrix" id="vMatrix"></table></div>
+          </div>
+          <div class="card c4">
+            <h2>Fields it got wrong most</h2><div class="hint">All models in this run</div><div class="bars" id="vWrong"></div>
+            <h2>How calls ended</h2><div class="bars" id="vEnded"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGINS -->
+    <section data-view="logins" hidden>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="kpis" id="lgKpis"></div>
+        <div class="grid">
+          <div class="card c6"><h2>Failed logins per day</h2><div class="hint">WhatsApp agent login page</div><div class="chart" id="lgFails"></div></div>
+          <div class="card c6"><h2>Most failed attempts</h2><div class="hint">By identity and by IP address</div><div class="bars" id="lgIds"></div><div class="bars" id="lgIps"></div></div>
+          <div class="card c12"><h2>Recent attempts</h2>
+            <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Result</th><th>Reason</th><th>IP</th></tr></thead><tbody id="lgRows"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dTitle">
+  <div class="d-head">
+    <div style="min-width:0"><h3 id="dTitle"></h3><div class="meta" id="dMeta"></div></div>
+    <button class="x" id="dClose" type="button">Close</button>
+  </div>
+  <div class="d-body" id="dBody"></div>
+</aside>
+<div class="tip" id="tip" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

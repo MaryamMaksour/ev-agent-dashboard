@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+users.json
+users.json.tmp
+logs/
+sample/
