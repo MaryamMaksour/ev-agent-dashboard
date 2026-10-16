@@ -1,0 +1,59 @@
+{
+  "run_at": "2026-10-16T08:00:00+00:00",
+  "mode": "round_trip",
+  "language": "en",
+  "models": {
+    "stt": "parakeet",
+    "tts": "kokoro",
+    "voice": "am_michael"
+  },
+  "summary": {
+    "items": 2,
+    "words": 16,
+    "wer": 0.0625,
+    "accuracy": 0.9375,
+    "key_term_accuracy": 0.75,
+    "stt_seconds_avg": 0.3,
+    "tts_seconds_avg": 0.5,
+    "tts_realtime_factor": 0.25,
+    "verdict": "NOT ENOUGH",
+    "targets": {
+      "accuracy": 0.9,
+      "key_term_accuracy": 0.95
+    }
+  },
+  "items": [
+    {
+      "id": "s01_identity",
+      "reference": "Yes, this is Sarah Johnson speaking.",
+      "transcript": "yes this is sarah johnson speaking",
+      "errors": 0,
+      "ref_words": 6,
+      "wer": 0.0,
+      "key_terms": 1,
+      "key_terms_found": 1,
+      "missed_key_terms": [],
+      "stt_seconds": 0.3,
+      "tts_seconds": 0.5,
+      "audio_seconds": 2.0,
+      "tts_realtime_factor": 0.25
+    },
+    {
+      "id": "s03_area_type",
+      "reference": "I'm looking for a two bedroom apartment in Dubai Marina.",
+      "transcript": "i'm looking for a two bedroom apartment in dubai marine",
+      "errors": 1,
+      "ref_words": 10,
+      "wer": 0.1,
+      "key_terms": 3,
+      "key_terms_found": 2,
+      "missed_key_terms": [
+        "Dubai Marina"
+      ],
+      "stt_seconds": 0.3,
+      "tts_seconds": 0.5,
+      "audio_seconds": 2.0,
+      "tts_realtime_factor": 0.25
+    }
+  ]
+}

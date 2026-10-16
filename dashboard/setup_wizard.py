@@ -69,6 +69,18 @@ def find_voice_runs(roots: list, max_depth: int = 6) -> list:
     return _unique(found)
 
 
+def find_voice_agent_data(roots: list, max_depth: int = 6) -> list:
+    """ev-voice-agent data/ folders (call records in data/calls/): next to agent/telephony.py or agent/events.py."""
+    found = []
+    for root in roots:
+        for dirpath, dirs, files in _walk(root, max_depth):
+            if os.path.basename(dirpath) == "agent" and {"main.py", "events.py", "metrics.py"} <= set(files):
+                parent = os.path.dirname(dirpath)
+                if os.path.isdir(os.path.join(parent, "crm")):
+                    found.append(os.path.abspath(os.path.join(parent, "data")))
+    return _unique(found)
+
+
 def _looks_like_run(path: str) -> bool:
     try:
         for model in os.listdir(path):
@@ -106,6 +118,7 @@ def write_env(path: str, values: dict) -> None:
         "# Written by python server.py --setup. You can edit it with any text editor.",
         f"EVPROTO_LOGS_DIR={values.get('EVPROTO_LOGS_DIR', '')}",
         f"VOICE_RUNS_DIR={values.get('VOICE_RUNS_DIR', '')}",
+        f"VOICE_AGENT_DATA_DIR={values.get('VOICE_AGENT_DATA_DIR', '')}",
         f"DASHBOARD_SECRET_KEY={values['DASHBOARD_SECRET_KEY']}",
         f"DASHBOARD_HOST={values.get('DASHBOARD_HOST', '127.0.0.1')}",
         f"DASHBOARD_PORT={values.get('DASHBOARD_PORT', '8585')}",
@@ -188,6 +201,9 @@ def run(here: str, ask: Callable[[str], str] = input, ask_secret: Callable[[str]
     values["VOICE_RUNS_DIR"] = choose_folder(
         "Voice agent test (voice-agent-llm-test) runs folder:",
         find_voice_runs(roots), values.get("VOICE_RUNS_DIR", ""), ask)
+    values["VOICE_AGENT_DATA_DIR"] = choose_folder(
+        "Voice agent (ev-voice-agent) data folder - holds calls/ and speech_evals/:",
+        find_voice_agent_data(roots), values.get("VOICE_AGENT_DATA_DIR", ""), ask)
 
     users_file = values.get("DASHBOARD_USERS_FILE", "users.json")
     if not os.path.isabs(users_file):

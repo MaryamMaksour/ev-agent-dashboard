@@ -103,7 +103,11 @@ input[type="search"] { border: 1px solid var(--line); background: var(--surface)
 .bars { display: flex; flex-direction: column; gap: 9px; }
 .bar-row { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr) 72px; gap: 10px; align-items: center; font-size: 13px; }
 .bar-row .name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bars.wide .bar-row { grid-template-columns: minmax(0, 270px) minmax(0, 1fr) 56px; }
+.bars.wide .bar-row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 48px; }
+.list { display: flex; flex-direction: column; }
+.li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.li:last-child { border-bottom: 0; }
+.li small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
 .bar-track { height: 12px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
 .bar-row .v { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; }

@@ -39,6 +39,7 @@ def _bool(value: str) -> bool:
 class Settings:
     evproto_logs_dir: str
     voice_runs_dir: str
+    voice_agent_data_dir: str = ""        # ev-voice-agent/data: calls/ and speech_evals/
     secret_key: str = ""
     host: str = "127.0.0.1"
     port: int = 8585
@@ -56,6 +57,7 @@ class Settings:
         return cls(
             evproto_logs_dir=e("EVPROTO_LOGS_DIR", "../me/ev-proto/logs"),
             voice_runs_dir=e("VOICE_RUNS_DIR", "../voice-agent-llm-test/runs"),
+            voice_agent_data_dir=e("VOICE_AGENT_DATA_DIR", "../ev-voice-agent/data"),
             secret_key=e("DASHBOARD_SECRET_KEY", ""),
             host=e("DASHBOARD_HOST", "127.0.0.1"),
             port=int(e("DASHBOARD_PORT", "8585")),

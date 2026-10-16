@@ -29,7 +29,7 @@ class SetupWizardTests(unittest.TestCase):
         self.assertEqual(setup_wizard.find_voice_runs([self.tmp.name]), [os.path.join(self.test_repo, "runs")])
 
     def test_full_run_writes_env_and_admin(self):
-        answers = iter(["1", "1", "maryam", "Maryam M."])
+        answers = iter(["1", "1", "", "maryam", "Maryam M."])  # 3rd folder (voice agent data): skip
         secrets_typed = iter(["long-enough-pass", "long-enough-pass"])
         setup_wizard._search_roots = lambda here: [self.tmp.name]  # keep the search inside the test folder
         try:
@@ -50,7 +50,7 @@ class SetupWizardTests(unittest.TestCase):
         setup_wizard.write_env(env_path, {"DASHBOARD_SECRET_KEY": "k" * 40, "EVPROTO_LOGS_DIR": self.logs,
                                           "VOICE_RUNS_DIR": "/somewhere"})
         open(os.path.join(self.dash, "users.json"), "w").write('{"a": {"role": "admin", "password": "x"}}')
-        answers = iter(["", "", "n"])  # keep both folders, no new admin
+        answers = iter(["", "", "", "n"])  # keep the folders, no new admin
         setup_wizard._search_roots = lambda here: []
         try:
             setup_wizard.run(self.dash, ask=lambda _q: next(answers), ask_secret=lambda _q: "")

@@ -1,0 +1,40 @@
+{
+  "call_id": "lead-L003-old",
+  "lead_id": "L003",
+  "transcript": [
+    {
+      "role": "agent",
+      "text": "Hello"
+    }
+  ],
+  "actions": [],
+  "metrics": {
+    "turns": 2,
+    "end_to_end": {
+      "p50": 1.4,
+      "p95": 2.0,
+      "mean": 1.5
+    },
+    "eou": {
+      "p50": 0.4,
+      "p95": 0.5,
+      "mean": 0.4
+    },
+    "llm_ttft": {
+      "p50": 0.8,
+      "p95": 1.2,
+      "mean": 0.9
+    },
+    "tts_ttfb": {
+      "p50": 0.2,
+      "p95": 0.3,
+      "mean": 0.2
+    }
+  },
+  "started_at": "2026-10-15T12:00:00+00:00",
+  "ended_at": "2026-10-15T12:02:00+00:00",
+  "extraction": {
+    "outcome": "callback",
+    "summary": "Call back Thursday."
+  }
+}

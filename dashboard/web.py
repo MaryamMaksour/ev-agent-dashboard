@@ -15,6 +15,8 @@ from urllib.parse import parse_qs, urlparse
 from .auth import LoginLimiter, Sessions, UserStore
 from .settings import Settings
 from .voice import VoiceTestSource, public_call
+from .voice_calls import VoiceCallSource
+from .voice_calls import public_call as public_voice_call
 from .whatsapp import OUTCOMES, WhatsAppSource
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
@@ -40,6 +42,7 @@ class App:
         self.limiter = LoginLimiter()
         self.whatsapp = WhatsAppSource(settings.evproto_logs_dir, settings.tz)
         self.voice = VoiceTestSource(settings.voice_runs_dir, settings.tz, settings.voice_log_tz)
+        self.voice_calls = VoiceCallSource(settings.voice_agent_data_dir, settings.tz)
         self._log_lock = threading.Lock()
 
     def access_log(self, event: str, **fields) -> None:
@@ -173,11 +176,25 @@ def make_handler(app: App):
                 return self.json(200, {"name": user["name"], "username": user["username"], "role": user["role"],
                                        "outcomes": OUTCOMES})
             if path == "/api/status":
-                return self.json(200, {"whatsapp": app.whatsapp.status(), "voice": app.voice.status()})
+                return self.json(200, {"whatsapp": app.whatsapp.status(), "voice": app.voice.status(),
+                                       "voice_calls": app.voice_calls.status()})
             if path == "/api/overview":
                 wa = app.whatsapp.summary(days)
                 vo = app.voice.summary(days)
-                return self.json(200, {"range": qs.get("range", "30"), "whatsapp": wa, "voice": vo})
+                return self.json(200, {"range": qs.get("range", "30"), "whatsapp": wa, "voice": vo,
+                                       "voice_calls": app.voice_calls.status()})
+            if path == "/api/voicecalls/summary":
+                return self.json(200, app.voice_calls.summary(days))
+            if path == "/api/voicecalls/call":
+                call = app.voice_calls.call(qs.get("id", ""))
+                if not call:
+                    return self.json(404, {"error": "That call was not found."})
+                if admin:
+                    app.access_log("view_voice_call", username=user["username"], call_id=call["id"])
+                return self.json(200, public_voice_call(call, full=True, show_text=admin))
+            if path == "/api/speech/run":
+                run = app.voice_calls.speech_run(qs.get("id", ""), show_text=admin)
+                return self.json(200, run) if run else self.json(404, {"error": "That speech test was not found."})
             if path == "/api/whatsapp/summary":
                 return self.json(200, app.whatsapp.summary(days))
             if path == "/api/whatsapp/questions":

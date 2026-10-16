@@ -56,8 +56,9 @@ class ServerTests(unittest.TestCase):
             "view": {"name": "Viewer", "role": "viewer", "password": hash_password("viewer-password-1")},
         })
         cls.access_log = os.path.join(cls.tmp.name, "access.jsonl")
-        settings = Settings(evproto_logs_dir=logs, voice_runs_dir=runs, secret_key=SECRET, host="127.0.0.1", port=0,
-                            users_file=users, access_log=cls.access_log)
+        fixtures = os.path.join(os.path.dirname(__file__), "fixtures", "voice_agent")
+        settings = Settings(evproto_logs_dir=logs, voice_runs_dir=runs, voice_agent_data_dir=fixtures, secret_key=SECRET,
+                            host="127.0.0.1", port=0, users_file=users, access_log=cls.access_log)
         cls.httpd = serve(settings)
         cls.port = cls.httpd.server_address[1]
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
@@ -117,11 +118,16 @@ class ServerTests(unittest.TestCase):
         self.assertIsNone(json.loads(data)["events"])
         r, data = self.req("GET", f"/api/voice/call?id={call}", cookie=admin)
         self.assertTrue(json.loads(data)["events"])
+        real = "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000"
+        self.assertIsNone(json.loads(self.req("GET", real, cookie=viewer)[1])["transcript"])
+        self.assertTrue(json.loads(self.req("GET", real, cookie=admin)[1])["transcript"])
 
     def test_pages_and_api(self):
         _, admin = self.login("admin", "admin-password-1")
         for path in ("/api/me", "/api/status", "/api/overview?range=all", "/api/whatsapp/summary?range=7",
-                     "/api/whatsapp/logins?range=all", "/api/voice/runs", "/api/voice/run?id=20261015-101500"):
+                     "/api/whatsapp/logins?range=all", "/api/voice/runs", "/api/voice/run?id=20261015-101500",
+                     "/api/voicecalls/summary?range=all", "/api/speech/run?id=20261016T080000-round_trip",
+                     "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000"):
             r, data = self.req("GET", path, cookie=admin)
             self.assertEqual(r.status, 200, path)
             json.loads(data)

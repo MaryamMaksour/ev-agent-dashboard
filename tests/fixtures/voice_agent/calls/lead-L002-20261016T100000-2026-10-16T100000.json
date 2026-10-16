@@ -1,0 +1,76 @@
+{
+  "call_id": "lead-L002-20261016T100000-2026-10-16T100000",
+  "lead_id": "L002",
+  "transcript": [],
+  "actions": [],
+  "metrics": {
+    "turns": 0,
+    "end_to_end": {
+      "min": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "mean": 0.0
+    },
+    "eou": {
+      "min": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "mean": 0.0
+    },
+    "llm_ttft": {
+      "min": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "mean": 0.0
+    },
+    "tts_ttfb": {
+      "min": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "mean": 0.0
+    },
+    "llm_turns": 0,
+    "llm_calls": 0,
+    "tokens": {
+      "prompt": 0,
+      "completion": 0,
+      "total": 0,
+      "per_turn": 0.0,
+      "tokens_per_second": 0.0
+    },
+    "stt": {
+      "requests": 0,
+      "audio_seconds": 0,
+      "seconds_avg": 0.0
+    },
+    "tts": {
+      "characters": 0,
+      "audio_seconds": 0
+    },
+    "turn_details": []
+  },
+  "started_at": "2026-10-16T10:00:00+00:00",
+  "ended_at": "2026-10-16T10:00:31+00:00",
+  "room": "lead-L002-20261016100000",
+  "models": {},
+  "ended_by": "not_reached",
+  "close_reason": "",
+  "tool_calls": [],
+  "line": {
+    "result": "busy",
+    "label": "Busy",
+    "sip_status_code": 486,
+    "sip_status": "Busy Here",
+    "ring_seconds": 3.1,
+    "number": "+97150*****02"
+  },
+  "recording": null,
+  "transfer": null,
+  "agent_closed": false,
+  "repeat_requests": 0,
+  "classification": "not_reached"
+}

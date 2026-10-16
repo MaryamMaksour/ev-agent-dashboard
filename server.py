@@ -37,7 +37,8 @@ def main(argv: list) -> int:
         load_dotenv(os.path.join(HERE, ".env"), override=True, protect=real_env)
         settings = Settings.from_env()
 
-    for label, path in (("WhatsApp agent logs", settings.evproto_logs_dir), ("Voice test runs", settings.voice_runs_dir)):
+    for label, path in (("WhatsApp agent logs", settings.evproto_logs_dir), ("Voice test runs", settings.voice_runs_dir),
+                        ("Voice agent data", settings.voice_agent_data_dir)):
         state = "found" if path and os.path.isdir(path) else "NOT FOUND - run: python server.py --setup"
         print(f"{label:<20} {path or '(not set)'}  ({state})")
     httpd = serve(settings)

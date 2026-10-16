@@ -118,6 +118,7 @@
   const titles = {
     overview: ["Overview", "Both agents, from what they already save"],
     whatsapp: ["WhatsApp agent", "Data assistant (ev-proto) · Zoho CRM, Zoho Books, MenaMe HR"],
+    calls: ["Voice agent calls", "LiveKit voice agent (ev-voice-agent) · real calls, browser now, 3CX next"],
     voice: ["Voice agent tests", "Qwen3 model tests (voice-agent-llm-test) · text calls, no audio yet"],
     logins: ["Logins", "Sign-in attempts on the WhatsApp agent"],
   };
@@ -130,6 +131,7 @@
     $("#ovHealth").innerHTML = [
       [ws.audit_db, "WhatsApp agent data", ws.audit_db ? `Last question ${ago(ws.last_question)}` : `audit.db not found in ${ws.logs_dir}`],
       [vs.found, "Voice test data", vs.found ? `${vs.runs} runs · last ${ago(vs.last_run)}` : `runs folder not found: ${vs.runs_dir}`],
+      [d.voice_calls.found, "Voice agent calls", d.voice_calls.found ? `${d.voice_calls.calls} calls · last ${ago(d.voice_calls.last_call)}` : `no calls folder in ${d.voice_calls.data_dir}`],
     ].map(([ok, title, sub]) => `<div class="hcell"><span class="dot" style="background:var(${ok ? "--good" : "--crit"})"></span><div><b>${esc(title)}</b><span>${esc(sub)}</span></div></div>`).join("");
     const latest = vo.latest_run;
     const best = latest && latest.models.find((x) => x.verdict === "GOOD ENOUGH");
@@ -289,6 +291,85 @@
     openDrawer(b);
   }
 
+  const dur = (v) => (v == null ? "–" : v >= 60 ? `${Math.floor(v / 60)} m ${Math.round(v % 60)} s` : `${Number(v).toFixed(1)} s`);
+  async function renderVoiceCalls() {
+    const d = await api(`/api/voicecalls/summary?range=${state.range}`);
+    const t = d.totals;
+    if (!d.status.found) {
+      $("#vcKpis").innerHTML = `<div class="note">No call records found in ${esc(d.status.data_dir)}/calls. Check VOICE_AGENT_DATA_DIR (python server.py --setup), or make a call with the voice agent.</div>`;
+    } else {
+      $("#vcKpis").innerHTML = [
+        kpi("Calls", num(t.calls), `${num(t.reached)} reached the lead`),
+        kpi("Agent closed the call", pct(t.reached ? t.agent_closed / t.reached : null), `${num(t.agent_closed)} of ${num(t.reached)} reached`),
+        kpi("Typical call length", dur(t.duration_median), "calls that reached the lead"),
+        kpi("Tokens per call", num(t.tokens_per_call), `${num(t.tokens_per_second, 1)} tokens/s · ${num(t.tokens_total)} in total`),
+        kpi("Asked for a person", num(t.transfer_asked), `${num(t.transferred)} transferred`),
+        kpi("Recorded", num(t.recorded), `Agent asked the caller to repeat: ${num(t.repeat_requests)}`),
+      ].join("");
+    }
+    $("#vcStages").innerHTML = d.stages.map((s, i) => `<tr><td>${i === 0 ? "<b>" : ""}${esc(s.label)}${i === 0 ? "</b>" : ""}</td><td class="r num">${secs(s.min)}</td><td class="r num">${secs(s.median)}</td><td class="r num">${secs(s.p95)}</td><td class="r num">${secs(s.max)}</td><td class="r num">${num(s.turns)}</td></tr>`).join("");
+    const lineTone = { answered: "--good", busy: "--warn", no_answer: "--serious", browser: "--ink-3" };
+    hbars($("#vcLine"), d.line_results.map((x) => ({ l: x.label, v: x.count, c: lineTone[x.key] || "--crit" })), { empty: "No calls in this period." });
+    hbars($("#vcClass"), d.classification.map((x) => ({ l: x.label, v: x.count, c: "--s2" })), { empty: "No calls in this period." });
+    hbars($("#vcEnded"), d.ended_by.map((x) => ({ l: x.label, v: x.count, c: x.label.startsWith("Agent") ? "--good" : "--s1" })), { empty: "No calls." });
+    $("#vcSlowHint").textContent = `Turns where the caller waited ${d.slow_turn_seconds} s or more`;
+    hbars($("#vcSlow"), d.slowest_stage.map((x) => ({ l: x.label, v: x.count, c: "--crit" })), { empty: `No turn took ${d.slow_turn_seconds} s or more.` });
+    const sp = d.speech;
+    const runCard = (r, title) => {
+      if (!r) return `<div class="li"><div>${esc(title)}<small>Not run yet</small></div><span class="pill">–</span></div>`;
+      const s = r.summary || {};
+      return `<div class="li"><div><button type="button" class="linkish" data-speech="${esc(r.id)}">${esc(title)}</button><small>${esc(when(r.run_at))} · STT ${esc(r.models.stt || "?")}${r.models.tts ? ` · TTS ${esc(r.models.tts)} (${esc(r.models.voice || "")})` : ""} · ${num(s.items)} items</small><small>Accuracy ${pct(s.accuracy, 1)} · key terms ${pct(s.key_term_accuracy, 1)} · STT ${secs(s.stt_seconds_avg)} per item${s.tts_seconds_avg != null ? ` · TTS ${secs(s.tts_seconds_avg)}` : ""}</small></div><span class="pill ${s.verdict === "GOOD ENOUGH" ? "good" : "crit"}">${esc(s.verdict || "–")}</span></div>`;
+    };
+    $("#vcSpeech").innerHTML = `<div class="list">${runCard(sp.recordings, "Real recordings (speech-to-text)")}${runCard(sp.round_trip, "Round trip (text-to-speech → speech-to-text)")}</div><div class="note">Targets: accuracy ≥ 90%, key terms (names, areas, amounts) ≥ 95%. Real recordings are the result to trust.</div>`;
+    $("#vcModels").innerHTML = d.by_model.map((x) => `<tr><td class="num">${esc(x.model)}</td><td class="r num">${x.calls}</td><td class="r num">${secs(x.ttft_median)}</td><td class="r num">${secs(x.e2e_median)}</td><td class="r num">${num(x.tokens_per_call)}</td><td class="r num">${x.qualified}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No answered calls.</td></tr>`;
+    const lineCls = { answered: "good", busy: "warn", no_answer: "serious", browser: "" };
+    $("#vcRows").innerHTML = d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.lead_id)}</td><td><span class="pill ${lineCls[c.line_result] ?? "crit"}">${esc(c.line_label)}</span></td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="r num">${secs(c.ttft_median)}</td><td class="r num">${c.tokens_total ? num(c.tokens_total) : "–"}</td><td>${c.recorded ? '<span class="pill good">Yes</span>' : c.recording ? '<span class="pill crit">Failed</span>' : '<span class="muted">–</span>'}</td><td>${c.transfer_asked ? `<span class="pill ${c.transferred ? "good" : "warn"}">${c.transferred ? "Transferred" : "Asked"}</span>` : '<span class="muted">–</span>'}</td></tr>`).join("") || `<tr><td colspan="10" class="empty">No calls in this period.</td></tr>`;
+  }
+  async function openVoiceCall(id) {
+    const c = await api(`/api/voicecalls/call?id=${encodeURIComponent(id)}`);
+    const admin = state.me.role === "admin";
+    const box = (k, v) => `<div><span>${esc(k)}</span><b>${v}</b></div>`;
+    $("#dTitle").textContent = `${c.lead_id} · ${c.classification_label}`;
+    $("#dMeta").innerHTML = [when(c.ts), c.room, c.models.llm, c.models.stt, c.models.tts].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
+    let b = `<div class="d-sum">` + [
+      box("Phone line", esc(c.line_label)), box("Ended", esc(c.ended_by_label)), box("Call length", dur(c.duration_seconds)),
+      box("Tokens", !c.tokens_total ? "–" : `${num(c.tokens_in)} in · ${num(c.tokens_out)} out`),
+      box("First token: shortest", secs(c.ttft_min)), box("First token: typical", secs(c.ttft_median)),
+      box("First token: longest", secs(c.ttft_max)), box("Caller waits: typical", secs(c.e2e_median)),
+    ].join("") + `</div>`;
+    if (c.line) b += `<div class="note"><b>Phone line:</b> ${esc(c.line.label || c.line_label)} · SIP ${esc(c.line.sip_status_code ?? "–")} ${esc(c.line.sip_status || "")} · rang ${secs(c.line.ring_seconds)} · ${esc(c.line.number || "")}</div>`;
+    if (c.recording) b += `<div class="note"><b>Recording:</b> ${c.recording.ok ? `${esc(c.recording.file)} (${esc(c.recording.storage || "")})` : `not recorded: ${esc(c.recording.error || "")}`}</div>`;
+    if (c.transfer) b += `<div class="note"><b>Asked for a person:</b> ${c.transfer.ok ? `transferred to ${esc(c.transfer.to)}` : `not transferred (${esc(c.transfer.error || "")})`}${c.transfer.reason ? ` · reason: ${esc(c.transfer.reason)}` : ""}</div>`;
+    if (c.error) b += `<div class="note"><b>Post-call check failed:</b> ${esc(c.error)}</div>`;
+    if (c.turns && c.turns.length) {
+      b += `<div class="block"><h4>Every turn</h4><div class="tbl-wrap"><table><thead><tr><th>#</th><th class="r">Caller waits</th><th class="r">STT</th><th class="r">First token</th><th class="r">TTS</th><th class="r">Tokens in / out</th><th class="r">Tok/s</th><th>Slowest</th></tr></thead><tbody>` +
+        c.turns.map((t) => `<tr><td class="num">${t.turn}</td><td class="r num">${secs(t.end_to_end)}</td><td class="r num">${secs(t.eou)}</td><td class="r num">${secs(t.llm_ttft)}${t.llm_calls > 1 ? ` <span class="muted">×${t.llm_calls}</span>` : ""}</td><td class="r num">${secs(t.tts_ttfb)}</td><td class="r num">${num(t.prompt_tokens)} / ${num(t.completion_tokens)}</td><td class="r num">${num(t.tokens_per_second, 1)}</td><td class="muted">${esc(t.slowest_stage || "–")}</td></tr>`).join("") + `</tbody></table></div></div>`;
+    } else {
+      b += `<div class="note">No per-turn timings in this record (made before the agent recorded them, or text mode without audio).</div>`;
+    }
+    if (admin && c.transcript) {
+      if (c.summary) b += `<div class="block"><h4>Summary for the sales team</h4><div class="text answer">${esc(c.summary)}</div></div>`;
+      b += `<div class="block"><h4>Tool calls</h4>${c.tool_calls.length ? `<div class="tx">${c.tool_calls.map((t) => `<div class="line tool ${t.is_error ? "bad" : ""}">${t.is_error ? "✗" : "✓"} ${esc(t.name)}(${esc(t.arguments || "")}) → ${esc(t.output || "")} <span class="muted">· ${esc((t.at || "").slice(11, 19))}</span></div>`).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>'}</div>`;
+      b += `<div class="block"><h4>Conversation</h4><div class="tx">${c.transcript.map((t) => `<div class="line ${t.role === "agent" ? "agent" : "lead"}"><small>${t.role === "agent" ? "Agent" : "Lead"}</small>${esc(t.text)}</div>`).join("") || '<div class="muted">No conversation.</div>'}</div></div>`;
+      if (Object.keys(c.filled_after_call || {}).length) b += `<div class="block"><h4>Filled in after the call</h4><div class="code">${esc(Object.entries(c.filled_after_call).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
+      if ((c.disagreements || []).length) b += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
+    } else {
+      b += `<div class="note">The conversation, tool calls and summary are visible to admins only.</div>`;
+    }
+    openDrawer(b);
+  }
+  async function openSpeechRun(id) {
+    const r = await api(`/api/speech/run?id=${encodeURIComponent(id)}`);
+    const admin = state.me.role === "admin";
+    const s = r.summary || {};
+    $("#dTitle").textContent = r.mode === "recordings" ? "Speech test: real recordings" : "Speech test: round trip";
+    $("#dMeta").innerHTML = [when(r.run_at), `STT ${r.models.stt || "?"}`, r.models.tts && `TTS ${r.models.tts}`, r.language].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
+    let b = `<div class="d-sum"><div><span>Accuracy</span><b>${pct(s.accuracy, 1)}</b></div><div><span>Key terms</span><b>${pct(s.key_term_accuracy, 1)}</b></div><div><span>Word error rate</span><b>${pct(s.wer, 1)}</b></div><div><span>Verdict</span><b>${esc(s.verdict || "–")}</b></div></div>`;
+    b += `<div class="block"><h4>Worst first</h4><div class="tbl-wrap"><table><thead><tr><th>Item</th><th class="r">WER</th>${admin ? "<th>Said</th><th>Heard</th><th>Missed</th>" : ""}</tr></thead><tbody>` +
+      r.items.map((i) => `<tr><td class="num">${esc(i.id)}</td><td class="r num">${pct(i.wer)}</td>${admin ? `<td class="q">${esc(i.reference)}</td><td class="q">${esc(i.transcript)}</td><td>${esc((i.missed_key_terms || []).join(", "))}</td>` : ""}</tr>`).join("") + `</tbody></table></div></div>`;
+    openDrawer(b);
+  }
+
   async function renderLogins() {
     const d = await api(`/api/whatsapp/logins?range=${state.range}`);
     $("#lgKpis").innerHTML = [
@@ -314,7 +395,7 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
 
   // ---------- navigation ----------
-  const renderers = { overview: renderOverview, whatsapp: renderWhatsApp, voice: renderVoice, logins: renderLogins };
+  const renderers = { overview: renderOverview, whatsapp: renderWhatsApp, calls: renderVoiceCalls, voice: renderVoice, logins: renderLogins };
   async function go(page) {
     if (page === "logins" && state.me.role !== "admin") page = "overview";
     state.page = page;
@@ -361,10 +442,13 @@
   document.addEventListener("click", (e) => {
     const q = e.target.closest("tr[data-q]"); if (q) openQuestion(q.dataset.q).catch(showError);
     const c = e.target.closest("button[data-call]"); if (c) openCall(c.dataset.call).catch(showError);
+    const vc = e.target.closest("tr[data-vcall]"); if (vc) openVoiceCall(vc.dataset.vcall).catch(showError);
+    const sr = e.target.closest("button[data-speech]"); if (sr) openSpeechRun(sr.dataset.speech).catch(showError);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const q = e.target.closest && e.target.closest("tr[data-q]"); if (q) openQuestion(q.dataset.q).catch(showError);
+    const vc = e.target.closest && e.target.closest("tr[data-vcall]"); if (vc) openVoiceCall(vc.dataset.vcall).catch(showError);
   });
   let resizeT;
   window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => go(state.page), 200); });

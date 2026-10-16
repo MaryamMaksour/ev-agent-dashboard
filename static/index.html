@@ -14,6 +14,7 @@
       <div class="nav-label">Agents</div>
       <button data-page="overview" aria-current="page"><span class="dot" style="background:var(--accent)"></span>Overview</button>
       <button data-page="whatsapp"><span class="dot" style="background:var(--s1)"></span>WhatsApp agent</button>
+      <button data-page="calls"><span class="dot" style="background:var(--s2)"></span>Voice agent calls</button>
       <button data-page="voice"><span class="dot" style="background:var(--s2)"></span>Voice agent tests</button>
       <div class="nav-label" style="margin-top:12px">Security</div>
       <button data-page="logins" data-admin><span class="dot" style="background:var(--ink-3)"></span>Logins</button>
@@ -97,6 +98,29 @@
             <div class="chips" id="waFilters"></div>
             <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Question</th><th>Result</th><th>Signals</th><th class="r">Time</th><th class="r">Cost (AED)</th></tr></thead><tbody id="waRows"></tbody></table></div>
             <div class="pager" id="waPager"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VOICE CALLS (ev-voice-agent) -->
+    <section data-view="calls" hidden>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="kpis" id="vcKpis"></div>
+        <div class="card"><h2>Waiting for the agent to answer</h2><div class="hint">Every turn: from the caller going quiet to the agent's first audio, and each stage of it</div>
+          <div class="tbl-wrap"><table><thead><tr><th>Stage</th><th class="r">Shortest</th><th class="r">Typical</th><th class="r">Slowest 5%</th><th class="r">Longest</th><th class="r">Turns</th></tr></thead><tbody id="vcStages"></tbody></table></div>
+        </div>
+        <div class="grid">
+          <div class="card c4"><h2>Phone line</h2><div class="hint">What happened when the agent dialled</div><div class="bars wide" id="vcLine"></div></div>
+          <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
+          <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div>
+            <h2>What slows slow turns</h2><div class="hint" id="vcSlowHint"></div><div class="bars wide" id="vcSlow"></div></div>
+          <div class="card c6"><h2>Speech accuracy</h2><div class="hint">Latest run of <span class="num">python -m evals.run_speech</span> in the voice agent</div><div id="vcSpeech"></div></div>
+          <div class="card c6"><h2>Per model</h2><div class="hint">Answered calls only</div>
+            <div class="tbl-wrap"><table><thead><tr><th>LLM</th><th class="r">Calls</th><th class="r">First token (typical)</th><th class="r">Caller waits (typical)</th><th class="r">Tokens / call</th><th class="r">Qualified</th></tr></thead><tbody id="vcModels"></tbody></table></div>
+          </div>
+          <div class="card c12"><h2>Calls</h2><div class="hint">Click a call for every turn, the tools it used, the transcript and the result</div>
+            <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Lead</th><th>Phone line</th><th>Result</th><th>Ended</th><th class="r">Length</th><th class="r">First token</th><th class="r">Tokens</th><th>Recording</th><th>Person</th></tr></thead><tbody id="vcRows"></tbody></table></div>
           </div>
         </div>
       </div>

@@ -8,6 +8,7 @@ One place to see what the company's AI agents do: how much they're used, when, b
 |---|---|---|
 | WhatsApp data agent | `ev-proto` (`me` repo) | `logs/audit.db` (every question, answer, cost, time, login) and `logs/conversations.db` |
 | Voice agent (tests) | `voice-agent-llm-test` | `runs/<run>/<model>/<mode>/logs/*.jsonl` (every test call) and `runs/chat/*.jsonl` |
+| Voice agent (real calls) | `ev-voice-agent` | `data/calls/*.json` (every LiveKit call) and `data/speech_evals/*.json` (speech accuracy runs) |
 
 The databases are opened **read-only**: the dashboard cannot change the agents' data.
 
@@ -24,6 +25,7 @@ See [docs/phases.md](docs/phases.md) for what each phase adds.
 |---|---|
 | **Overview** | Whether each agent's data is found and how fresh it is · WhatsApp questions, cost, answer time · voice test results · questions and cost per day · when the agents are used (weekday × hour, UAE time) · what isn't tracked yet |
 | **WhatsApp agent** | Questions, people, Arabic share · how questions ended · typical and slowest answer time · cost per question · top users · models · most cited sources · every question with search and filters · one question in detail |
+| **Voice agent calls** | Calls, how many reached the lead, whether the agent closed the call, typical call length, **tokens per call**, asked for a person / transferred, recorded · **waiting time per stage: shortest / typical / slowest 5% / longest** for the whole turn, speech-to-text, **LLM first token** and text-to-speech · **phone line results** (answered / busy / no answer / declined / invalid number) · classification · how calls ended · what slows slow turns · **speech accuracy** (latest round-trip and real-recording runs) · per model · every call with each turn's timings and tokens, tool calls, transcript, recording and transfer |
 | **Voice agent tests** | Pick a test run · per model: verdict (same rule as the test report), passed scenarios, field accuracy, **whether the agent closed the call**, typical call length, rejected tool calls, how often the code stepped in · **waiting time per reply: shortest / typical / longest, and why** · **call classification** · why replies are slow · scenario × model grid · the fields models get wrong most · one call with the conversation, every tool call (accepted or rejected, with its time), any thinking, and the result saved in the CRM |
 | **Logins** (admins) | Login attempts on the WhatsApp agent, failures per day, most failed identities and IPs |
 

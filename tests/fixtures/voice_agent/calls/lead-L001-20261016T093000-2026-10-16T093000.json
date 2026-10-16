@@ -1,0 +1,182 @@
+{
+  "call_id": "lead-L001-20261016T093000-2026-10-16T093000",
+  "lead_id": "L001",
+  "transcript": [
+    {
+      "role": "agent",
+      "text": "Hi, this is Alex from Horizon Realty. Am I speaking with Sarah?"
+    },
+    {
+      "role": "user",
+      "text": "Yes. My budget is about 800 thousand."
+    },
+    {
+      "role": "agent",
+      "text": "Sorry, could you repeat the area?"
+    },
+    {
+      "role": "user",
+      "text": "Dubai Marina. Can I talk to a real person?"
+    }
+  ],
+  "actions": [
+    {
+      "action": "update_lead",
+      "budget": 800000,
+      "status": "interested"
+    }
+  ],
+  "metrics": {
+    "turns": 3,
+    "end_to_end": {
+      "min": 1.18,
+      "p50": 1.23,
+      "p95": 2.877,
+      "max": 3.06,
+      "mean": 1.823
+    },
+    "eou": {
+      "min": 0.3,
+      "p50": 0.35,
+      "p95": 0.404,
+      "max": 0.41,
+      "mean": 0.353
+    },
+    "llm_ttft": {
+      "min": 0.62,
+      "p50": 0.71,
+      "p95": 2.231,
+      "max": 2.4,
+      "mean": 1.243
+    },
+    "tts_ttfb": {
+      "min": 0.21,
+      "p50": 0.22,
+      "p95": 0.247,
+      "max": 0.25,
+      "mean": 0.227
+    },
+    "llm_turns": 3,
+    "llm_calls": 4,
+    "tokens": {
+      "prompt": 4480,
+      "completion": 96,
+      "total": 4576,
+      "per_turn": 1525.3,
+      "tokens_per_second": 22.7
+    },
+    "stt": {
+      "requests": 0,
+      "audio_seconds": 0,
+      "seconds_avg": 0.0
+    },
+    "tts": {
+      "characters": 180,
+      "audio_seconds": 6.0
+    },
+    "turn_details": [
+      {
+        "turn": 1,
+        "end_to_end": 1.18,
+        "eou": 0.35,
+        "stt": 0.1,
+        "llm_ttft": 0.62,
+        "llm_seconds": 1.0,
+        "llm_calls": 1,
+        "prompt_tokens": 1100,
+        "completion_tokens": 28,
+        "tokens_per_second": 28.0,
+        "tts_ttfb": 0.21,
+        "tts_characters": 60,
+        "slowest_stage": "LLM first word"
+      },
+      {
+        "turn": 2,
+        "end_to_end": 3.06,
+        "eou": 0.41,
+        "stt": 0.1,
+        "llm_ttft": 2.4,
+        "llm_seconds": 2.0,
+        "llm_calls": 2,
+        "prompt_tokens": 2280,
+        "completion_tokens": 40,
+        "tokens_per_second": 12.0,
+        "tts_ttfb": 0.25,
+        "tts_characters": 60,
+        "slowest_stage": "LLM first word"
+      },
+      {
+        "turn": 3,
+        "end_to_end": 1.23,
+        "eou": 0.3,
+        "stt": 0.1,
+        "llm_ttft": 0.71,
+        "llm_seconds": 1.0,
+        "llm_calls": 1,
+        "prompt_tokens": 1100,
+        "completion_tokens": 28,
+        "tokens_per_second": 28.0,
+        "tts_ttfb": 0.22,
+        "tts_characters": 60,
+        "slowest_stage": "LLM first word"
+      }
+    ]
+  },
+  "started_at": "2026-10-16T09:30:00+00:00",
+  "ended_at": "2026-10-16T09:33:05+00:00",
+  "room": "lead-L001-20261016093000",
+  "models": {
+    "llm": "qwen3:8b",
+    "stt": "parakeet",
+    "tts": "kokoro",
+    "tts_voice": "af_heart"
+  },
+  "ended_by": "transferred",
+  "close_reason": "participant_disconnected",
+  "tool_calls": [
+    {
+      "name": "update_lead",
+      "arguments": "{\"budget\": 800000}",
+      "output": "Saved: status, budget.",
+      "is_error": false,
+      "at": "2026-10-16T09:31:10+00:00"
+    },
+    {
+      "name": "transfer_to_human",
+      "arguments": "{\"reason\": \"asked for a person\"}",
+      "output": "The caller is being transferred to a colleague now. Say nothing more.",
+      "is_error": false,
+      "at": "2026-10-16T09:33:00+00:00"
+    }
+  ],
+  "line": {
+    "result": "answered",
+    "label": "Answered",
+    "sip_status_code": 200,
+    "sip_status": "OK",
+    "ring_seconds": 6.2,
+    "number": "+97150*****01"
+  },
+  "recording": {
+    "ok": true,
+    "egress_id": "EG_1",
+    "file": "recordings/lead-L001.ogg",
+    "storage": "s3"
+  },
+  "transfer": {
+    "reason": "asked for a person",
+    "ok": true,
+    "to": "sip:201@pbx"
+  },
+  "agent_closed": false,
+  "repeat_requests": 1,
+  "classification": "interested",
+  "extraction": {
+    "outcome": "interested",
+    "summary": "Sarah wants an apartment in Dubai Marina around 800k; asked for a consultant."
+  },
+  "filled_after_call": {
+    "preferred_area": "Dubai Marina"
+  },
+  "disagreements": []
+}
