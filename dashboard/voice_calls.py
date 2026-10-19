@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
 from collections import Counter, defaultdict
 from datetime import timedelta
 from typing import Optional
@@ -193,7 +195,7 @@ def public_call(c: dict, *, full: bool, show_text: bool) -> dict:
     hidden = {"ts", "ended_at", "metrics", "turns", "errors", "llm_log", "crm_log", *TEXT_FIELDS}
     out = {k: v for k, v in c.items() if k not in hidden}
     out["ts"], out["ended_at"] = m.iso(c["ts"]), m.iso(c["ended_at"])
-    out["tool_call_count"] = len(c["tool_calls"])
+    out["tool_call_count"] = c.get("tool_call_count", len(c["tool_calls"] or []))
     if c["transfer"] and not show_text:
         out["transfer"] = {k: v for k, v in c["transfer"].items() if k != "reason"}
     if c["error"] and not show_text:
@@ -211,13 +213,27 @@ def public_call(c: dict, *, full: bool, show_text: bool) -> dict:
     return out
 
 
+def slim(c: dict) -> dict:
+    """What the lists, summaries and charts need from one call: no transcript or raw metrics.
+    The call's detail view re-reads the file (VoiceCallSource.call), so nothing is lost."""
+    out = dict(c)
+    out["tool_call_count"] = len(c["tool_calls"])
+    out["transcript"], out["tool_calls"], out["summary"], out["metrics"] = [], [], None, {}
+    return out
+
+
 class VoiceCallSource:
-    def __init__(self, data_dir: str, tz) -> None:
+    def __init__(self, data_dir: str, tz, cache_seconds: float = 15.0) -> None:
         self.data_dir = data_dir
         self.calls_dir = os.path.join(data_dir, "calls")
         self.evals_dir = os.path.join(data_dir, "speech_evals")
         self.tz = tz
-        self._cache: dict = {}
+        self.cache_seconds = cache_seconds
+        self._cache: dict = {}    # raw JSON per file, for the speech runs
+        self._parsed: dict = {}   # path -> ((mtime, size), slim parsed call or None)
+        self._listed: Optional[tuple] = None  # (monotonic expiry, [calls, newest first])
+        self._memo: dict = {}     # (what, args) -> (the call list it was worked out from, result)
+        self._lock = threading.Lock()
 
     def _read_dir(self, folder: str) -> list:
         out = []
@@ -240,11 +256,57 @@ class VoiceCallSource:
                 out.append((name[:-5], hit[1]))
         return out
 
+    def _all_calls(self) -> list:
+        """Every finished call, newest first. A file is parsed once and again only when it changes;
+        the folder itself is listed at most every `cache_seconds` (one page asks several times)."""
+        with self._lock:
+            if self._listed and self._listed[0] > time.monotonic():
+                return self._listed[1]
+            out, seen = [], set()
+            try:
+                names = os.listdir(self.calls_dir) if os.path.isdir(self.calls_dir) else []
+            except OSError:
+                names = []
+            for name in names:
+                if not name.endswith(".json") or name.endswith(RAW_SUFFIX):
+                    continue
+                path = os.path.join(self.calls_dir, name)
+                try:
+                    st = os.stat(path)
+                except OSError:
+                    continue
+                seen.add(path)
+                key = (st.st_mtime_ns, st.st_size)
+                hit = self._parsed.get(path)
+                if not hit or hit[0] != key:
+                    raw = _load(path)
+                    hit = (key, slim(parse_call(raw, name[:-5])) if raw else None)
+                    self._parsed[path] = hit
+                if hit[1] is not None and hit[1]["ts"]:
+                    out.append(hit[1])
+            for gone in set(self._parsed) - seen:  # files that disappeared
+                del self._parsed[gone]
+            out.sort(key=lambda c: c["ts"], reverse=True)
+            self._listed = (time.monotonic() + self.cache_seconds, out)
+            return out
+
+    def _remember(self, what: str, args: tuple, now, work):
+        """Reuse a summary while the call list is the same one (see _all_calls); `now` is for tests."""
+        if now is not None:
+            return work()
+        listed = self._all_calls()
+        hit = self._memo.get((what, args))
+        if hit and hit[0] is listed:
+            return hit[1]
+        value = work()
+        if len(self._memo) > 64:
+            self._memo.clear()
+        self._memo[(what, args)] = (listed, value)
+        return value
+
     def calls(self, days: Optional[int] = None, now=None) -> list:
         start = m.since(days, now)
-        out = [parse_call(raw, cid) for cid, raw in self._read_dir(self.calls_dir)]
-        out = [c for c in out if c["ts"] and (not start or c["ts"] >= start)]
-        return sorted(out, key=lambda c: c["ts"], reverse=True)
+        return [c for c in self._all_calls() if not start or c["ts"] >= start]
 
     def call(self, call_id: str) -> Optional[dict]:
         if not call_id or not _SAFE.match(call_id) or call_id.endswith(".raw") or call_id in (".", ".."):
@@ -278,6 +340,9 @@ class VoiceCallSource:
                 "speech_runs": len(self._read_dir(self.evals_dir))}
 
     def summary(self, days: Optional[int], now=None) -> dict:
+        return self._remember("summary", (days,), now, lambda: self._summary(days, now))
+
+    def _summary(self, days: Optional[int], now=None) -> dict:
         cs = self.calls(days, now)
         n = len(cs)
         reached = [c for c in cs if c["line_result"] in ("answered", "browser")]
@@ -350,9 +415,13 @@ class VoiceCallSource:
 
     # ---------- busy hours and bottlenecks ----------
     def per_day(self, days: Optional[int], now=None) -> list:
-        return m.day_series(self.calls(days, now), self.tz, days, now=now)
+        return self._remember("per_day", (days,), now,
+                              lambda: m.day_series(self.calls(days, now), self.tz, days, now=now))
 
     def hours(self, days: Optional[int], day: Optional[str] = None, now=None) -> dict:
+        return self._remember("hours", (days, day), now, lambda: self._hours(days, day, now))
+
+    def _hours(self, days: Optional[int], day: Optional[str] = None, now=None) -> dict:
         """Per hour of the day (local time): how many calls, how many at once, where the caller's wait goes,
         tokens and call length. `day` (YYYY-MM-DD) narrows it to one day. A turn counts in its call's start hour."""
         in_range = self.calls(days, now)

@@ -50,6 +50,7 @@ class Settings:
     session_hours: int = 8
     tz_offset_hours: float = 4.0          # UAE time for charts (no daylight saving)
     voice_log_tz_offset_hours: float = 4.0  # voice test logs are written in server local time, without a zone
+    voice_cache_seconds: float = 15.0     # how long the list of voice calls is reused before the folder is read again
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -68,6 +69,7 @@ class Settings:
             session_hours=int(e("DASHBOARD_SESSION_HOURS", "8")),
             tz_offset_hours=float(e("DASHBOARD_UTC_OFFSET_HOURS", "4")),
             voice_log_tz_offset_hours=float(e("VOICE_LOG_UTC_OFFSET_HOURS", "4")),
+            voice_cache_seconds=float(e("VOICE_CACHE_SECONDS", "15")),
         )
 
     @property

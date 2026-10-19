@@ -44,7 +44,7 @@ class App:
         self.limiter = LoginLimiter()
         self.whatsapp = WhatsAppSource(settings.evproto_logs_dir, settings.tz)
         self.voice = VoiceTestSource(settings.voice_runs_dir, settings.tz, settings.voice_log_tz)
-        self.voice_calls = VoiceCallSource(settings.voice_agent_data_dir, settings.tz)
+        self.voice_calls = VoiceCallSource(settings.voice_agent_data_dir, settings.tz, settings.voice_cache_seconds)
         self._log_lock = threading.Lock()
 
     def access_log(self, event: str, **fields) -> None:

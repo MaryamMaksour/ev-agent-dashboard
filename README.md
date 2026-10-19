@@ -178,6 +178,18 @@ They build small data folders in the agents' formats and check:
 - login, cookies and lockout
 - blocked path tricks and cross-site posts
 
+Speed at production volume (84,000 voice calls = 2,800 a day for 30 days; takes a few minutes to set up):
+
+```bash
+RUN_SCALE_TEST=1 python -m unittest tests.test_scale -v
+```
+
+## Optional settings (`.env`)
+
+| Setting | Default | What |
+|---|---|---|
+| `VOICE_CACHE_SECONDS` | 15 | The list of voice calls is reused for this long, so a page loads fast with tens of thousands of calls. New calls show up within this time. |
+
 ## Layout
 
 | File | Job |
@@ -188,6 +200,7 @@ They build small data folders in the agents' formats and check:
 | `dashboard/settings.py` | Settings from `.env` / environment |
 | `dashboard/whatsapp.py` | Reads ev-proto's `audit.db` and `conversations.db` |
 | `dashboard/voice.py` | Reads voice test call logs |
+| `dashboard/voice_calls.py` | Reads the voice agent's call records (cached: each file is parsed once) |
 | `dashboard/metrics.py` | Time parsing, percentiles, daily series, heatmap |
 | `dashboard/auth.py` | Password hashing, signed session cookie, login lockout |
 | `dashboard/web.py` | HTTP server, pages and the read-only JSON API |
