@@ -1,0 +1,161 @@
+{
+  "call_id": "lead-L004-20261019T100000-2026-10-19T100000",
+  "lead_id": "L004",
+  "transcript": [
+    {
+      "role": "agent",
+      "text": "Hi, is this Omar?"
+    },
+    {
+      "role": "user",
+      "text": "Yes, a villa, 2 million."
+    }
+  ],
+  "actions": [
+    {
+      "action": "update_lead",
+      "budget": 2000000,
+      "property_type": "villa"
+    }
+  ],
+  "metrics": {
+    "turns": 2,
+    "llm_turns": 2,
+    "llm_calls": 3,
+    "turn_details": [
+      {
+        "turn": 1,
+        "end_to_end": 0.95,
+        "eou": 0.32,
+        "stt": 0.2,
+        "llm_ttft": 0.41,
+        "llm_seconds": 0.9,
+        "llm_calls": 1,
+        "prompt_tokens": 1200,
+        "completion_tokens": 14,
+        "tokens_per_second": 55.0,
+        "tts_ttfb": 0.22,
+        "tts_characters": 40,
+        "slowest_stage": "LLM first word"
+      },
+      {
+        "turn": 2,
+        "end_to_end": 3.2,
+        "eou": 0.35,
+        "stt": 0.21,
+        "llm_ttft": 2.6,
+        "llm_seconds": 3.1,
+        "llm_calls": 2,
+        "prompt_tokens": 1300,
+        "completion_tokens": 30,
+        "tokens_per_second": 48.0,
+        "tts_ttfb": 0.25,
+        "tts_characters": 90,
+        "slowest_stage": "LLM first word"
+      }
+    ],
+    "tokens": {
+      "prompt": 2500,
+      "completion": 44,
+      "total": 2544,
+      "per_turn": 1272,
+      "tokens_per_second": 51.5
+    },
+    "interruptions": 1,
+    "false_interruptions": 0,
+    "llm_requests": {
+      "total": 2,
+      "errors": 0,
+      "cancelled": 0,
+      "thinking_removed": 0
+    },
+    "user_speech_seconds": 21.4
+  },
+  "started_at": "2026-10-19T06:00:00+00:00",
+  "ended_at": "2026-10-19T06:02:30+00:00",
+  "room": "lead-L004-20261019T100000",
+  "models": {
+    "llm": "qwen3.5-9b",
+    "stt": "whisper-1",
+    "tts": "kokoro",
+    "tts_voice": "af_heart",
+    "served_by": "vllm",
+    "llm_server": {
+      "served_by": "vllm",
+      "model": "qwen3.5-9b",
+      "max_model_len": 16384
+    }
+  },
+  "ended_by": "agent",
+  "close_reason": "",
+  "tool_calls": [
+    {
+      "name": "update_lead",
+      "arguments": "{\"budget\": 2000000}",
+      "output": "Saved: budget.",
+      "is_error": false,
+      "at": "2026-10-19T06:00:00+00:00"
+    }
+  ],
+  "line": null,
+  "recording": null,
+  "transfer": null,
+  "versions": {
+    "code": "abc1234",
+    "prompt": "9f8e7d6c5b",
+    "livekit_agents": "1.8.8"
+  },
+  "settings": {
+    "llm_temperature": 0.3,
+    "llm_backend": "vllm",
+    "turn_detection": "model",
+    "post_call": "in_process"
+  },
+  "errors": [
+    {
+      "stage": "tts",
+      "source": "TTS",
+      "at": "2026-10-19T06:02:30+00:00",
+      "error": "APITimeoutError('TTS took too long')",
+      "recoverable": true
+    }
+  ],
+  "log_files": {
+    "events": "lead-L004-20261019T100000-2026-10-19T100000/events.jsonl",
+    "llm": "lead-L004-20261019T100000-2026-10-19T100000/llm.jsonl",
+    "crm_changes": "lead-L004-20261019T100000-2026-10-19T100000/crm_changes.jsonl"
+  },
+  "agent_closed": true,
+  "repeat_requests": 0,
+  "duration_seconds": 150.0,
+  "extraction": {
+    "outcome": "qualified",
+    "lead_update": {
+      "status": "qualified",
+      "budget": 2000000,
+      "preferred_area": "Dubai Hills",
+      "property_type": "villa",
+      "timeline": "within 3 months",
+      "interest_level": "hot"
+    },
+    "callback_requested": false,
+    "callback_time_text": null,
+    "summary": "Wants a villa in Dubai Hills, 2M, within 3 months."
+  },
+  "filled_after_call": {
+    "status": "qualified",
+    "preferred_area": "Dubai Hills",
+    "timeline": "within 3 months",
+    "interest_level": "hot"
+  },
+  "disagreements": [],
+  "classification": "qualified",
+  "post_call_llm": {
+    "requests": 1,
+    "seconds": 0.187,
+    "prompt_tokens": 100,
+    "completion_tokens": 20,
+    "ok": true
+  },
+  "post_call_seconds": 0.234
+}

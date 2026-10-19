@@ -1,0 +1,21 @@
+{
+  "call_id": "lead-L005-20261019T103000-2026-10-19T103000",
+  "lead_id": "L005",
+  "transcript": [],
+  "actions": [],
+  "metrics": {},
+  "started_at": "2026-10-19T06:30:00+00:00",
+  "ended_at": "2026-10-19T06:32:00+00:00",
+  "room": "lead-L005-20261019T103000",
+  "models": {},
+  "ended_by": "",
+  "close_reason": "",
+  "tool_calls": [],
+  "line": null,
+  "recording": null,
+  "transfer": null,
+  "versions": {},
+  "settings": {},
+  "errors": [],
+  "log_files": {}
+}

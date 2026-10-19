@@ -1,5 +1,6 @@
 """The real voice agent's call records (fixtures written by ev-voice-agent's own CallMetrics/PostCallProcessor)."""
 
+import json
 import os
 import unittest
 from datetime import timedelta, timezone
@@ -65,6 +66,64 @@ class VoiceCallTests(unittest.TestCase):
         src = VoiceCallSource("/nonexistent", UAE)
         self.assertEqual(src.summary(30)["totals"]["calls"], 0)
         self.assertFalse(src.status()["found"])
+
+
+DATA_V2 = os.path.join(os.path.dirname(__file__), "fixtures", "voice_agent_v2")
+V2_CALL = "lead-L004-20261019T100000-2026-10-19T100000"
+
+
+class VoiceCallV2Tests(unittest.TestCase):
+    """Records written by the newer agent: errors list, post-call LLM check, per-call log folder,
+    vLLM/Ollama label, and .raw.json files for calls still being processed (fixtures made with the agent's code)."""
+
+    def setUp(self):
+        self.src = VoiceCallSource(DATA_V2, UAE)
+
+    def test_unfinished_calls_are_not_counted_as_calls(self):
+        ids = [c["id"] for c in self.src.calls()]
+        self.assertEqual(ids, [V2_CALL])  # the .raw.json one is left out
+        self.assertEqual(self.src.status()["processing"], 1)
+        self.assertEqual(self.src.summary(None)["totals"]["processing"], 1)
+        self.assertIsNone(self.src.call("lead-L005-20261019T103000-2026-10-19T103000.raw"))
+
+    def test_errors_and_post_call_check(self):
+        c = self.src.call(V2_CALL)
+        self.assertEqual((c["error_count"], c["error_stages"]), (1, ["tts"]))
+        self.assertEqual(c["errors"][0]["stage_label"], "Text-to-speech")
+        self.assertEqual(c["served_by"], "vllm")
+        self.assertEqual(c["versions"]["code"], "abc1234")
+        self.assertEqual(c["interruptions"], 1)
+        self.assertTrue(c["post_call_llm"]["ok"])
+        self.assertEqual(c["post_call_llm"]["prompt_tokens"] + c["post_call_llm"]["completion_tokens"], 120)
+        s = self.src.summary(None)
+        self.assertEqual(s["errors_by_stage"], [{"label": "Text-to-speech", "count": 1}])
+        self.assertEqual((s["totals"]["calls_with_errors"], s["totals"]["post_call_checks"]), (1, 1))
+        self.assertEqual((s["by_model"][0]["model"], s["by_model"][0]["served_by"]), ("qwen3.5-9b", "vllm"))
+
+    def test_llm_requests_and_crm_changes(self):
+        full = public_call(self.src.call(V2_CALL), full=True, show_text=True)
+        stages = [r["stage"] for r in full["llm_requests"]]
+        self.assertEqual(stages, ["call", "call", "post_call"])
+        self.assertEqual(full["llm_requests"][1]["tools_called"], ["update_lead"])
+        self.assertEqual((full["llm_requests"][0]["prompt_tokens"], full["llm_requests"][0]["cached_tokens"]), (1200, 1100))
+        self.assertEqual(full["llm_requests"][2]["prompt_tokens"], 100)
+        crm = full["crm_changes"]
+        self.assertEqual([x["source"] for x in crm], ["call", "post_call", "post_call"])
+        self.assertEqual(crm[0]["changed"]["budget"], {"before": None, "after": 2000000})
+
+    def test_viewer_gets_no_text_from_new_fields(self):
+        v = public_call(self.src.call(V2_CALL), full=True, show_text=False)
+        self.assertNotIn("error", v["errors"][0])               # which stage failed: yes; the message: no
+        self.assertEqual(v["errors"][0]["stage"], "tts")
+        for r in v["llm_requests"]:
+            for k in ("reply", "tool_calls", "error", "messages"):
+                self.assertNotIn(k, r)
+        for x in v["crm_changes"]:
+            self.assertNotIn("changed", x)                       # field names only, no values
+        self.assertEqual(v["crm_changes"][0]["fields"], ["budget", "property_type"])
+        dumped = json.dumps(v)
+        for secret in ("SECRET PROMPT TEXT", "Is this Omar", "Dubai Hills", "2 million"):
+            self.assertNotIn(secret.lower(), dumped.lower())
 
 
 if __name__ == "__main__":

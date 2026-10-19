@@ -1,7 +1,12 @@
 """Reads what the real voice agent (ev-voice-agent, LiveKit) saves. READ-ONLY.
 
   <data>/calls/<call>.json         one call: transcript, CRM actions, tool calls, per-turn timings and tokens,
-                                   phone line result, recording, transfer, classification
+                                   phone line result, recording, transfer, classification, errors,
+                                   post-call LLM check, versions, settings, which LLM server answered
+  <data>/calls/<call>.raw.json     a call whose post-call work hasn't finished yet (or the agent crashed
+                                   before it did): counted as "being processed", never as a call
+  <data>/calls/<call>/llm.jsonl          every LLM request (stage "call" or "post_call")
+  <data>/calls/<call>/crm_changes.jsonl  every CRM write, before -> after
   <data>/speech_evals/<run>.json   speech-to-text / text-to-speech accuracy runs (python -m evals.run_speech)
 
 Older call records (before the agent recorded these fields) still load; missing values show as unknown.
@@ -31,8 +36,41 @@ ENDED_BY = {"agent": "Agent closed the call", "lead": "Lead hung up", "transferr
             "not_reached": "Lead not reached", "error": "Stopped: error", "shutdown": "Worker shut down"}
 STAGES = [("end_to_end", "Caller stops → agent's first audio"), ("eou", "Speech-to-text (end of speech)"),
           ("llm_ttft", "LLM first token"), ("tts_ttfb", "Text-to-speech first audio")]
+STAGE_LABELS = {"stt": "Speech-to-text", "llm": "LLM", "tts": "Text-to-speech", "vad": "Voice detection",
+                "crm": "CRM", "session": "Call session", "post_call": "Post-call check"}
 SLOW_TURN_SECONDS = 1.5
+RAW_SUFFIX = ".raw.json"
+MAX_LOG_LINES = 500          # per log file shown in one call's detail
 _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _read_jsonl(path: str, limit: int = MAX_LOG_LINES) -> list:
+    out = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if len(out) >= limit:
+                    break
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    out.append(row)
+    except OSError:
+        pass
+    return out
+
+
+def _errors(raw: dict) -> list:
+    """The record's `errors` list (every pipeline stage), plus the older single `error` field."""
+    out = [dict(e) for e in (raw.get("errors") or []) if isinstance(e, dict)]  # copies: raw is cached
+    if raw.get("error") and not any(e.get("stage") == "post_call" for e in out):
+        out.append({"stage": "post_call", "error": raw["error"]})
+    for e in out:
+        e["stage"] = e.get("stage") or "session"
+        e["stage_label"] = STAGE_LABELS.get(e["stage"], e["stage"])
+    return out
 
 
 def _load(path: str) -> Optional[dict]:
@@ -61,6 +99,11 @@ def parse_call(raw: dict, call_id: str) -> dict:
     e2e = [t["end_to_end"] for t in turns if t.get("end_to_end") is not None]
     transfer = raw.get("transfer")
     recording = raw.get("recording")
+    models = raw.get("models") or {}
+    settings = raw.get("settings") or {}
+    errors = _errors(raw)
+    post_llm = raw.get("post_call_llm") or {}
+    llm_requests = metrics.get("llm_requests") if isinstance(metrics.get("llm_requests"), dict) else {}
     return {
         "id": call_id, "lead_id": raw.get("lead_id", "?"), "room": raw.get("room", ""),
         "ts": started, "ended_at": ended,
@@ -73,7 +116,18 @@ def parse_call(raw: dict, call_id: str) -> dict:
         "transfer": transfer, "transferred": bool(transfer and transfer.get("ok")),
         "transfer_asked": bool(transfer),
         "recording": recording, "recorded": bool(recording and recording.get("ok")),
-        "models": raw.get("models") or {},
+        "models": models,
+        # vllm (production) or ollama (testing); older records don't say
+        "served_by": models.get("served_by") or (models.get("llm_server") or {}).get("served_by")
+        or settings.get("llm_backend") or None,
+        "versions": raw.get("versions") or {}, "settings": settings,
+        "errors": errors, "error_count": len(errors), "error_stages": sorted({e["stage"] for e in errors}),
+        "post_call_seconds": raw.get("post_call_seconds"),
+        "post_call_llm": post_llm or None,
+        "interruptions": metrics.get("interruptions"),
+        "llm_errors": llm_requests.get("errors"), "llm_cancelled": llm_requests.get("cancelled"),
+        "user_speech_seconds": metrics.get("user_speech_seconds"),
+        "log_files": raw.get("log_files") or {},
         "turns": turns, "voice_turns": metrics.get("turns", 0), "llm_turns": metrics.get("llm_turns", len(ttfts)),
         "ttft_min": min(ttfts) if ttfts else None, "ttft_median": m.rnd(m.percentile(ttfts, 0.5), 3),
         "ttft_max": max(ttfts) if ttfts else None,
@@ -92,17 +146,65 @@ def parse_call(raw: dict, call_id: str) -> dict:
 TEXT_FIELDS = ("transcript", "tool_calls", "actions", "summary", "filled_after_call", "disagreements")
 
 
+def llm_rows(lines: list, *, show_text: bool) -> list:
+    """llm.jsonl -> one row per LLM request: timings and tokens for everyone, text for admins only."""
+    rows = []
+    for x in lines:
+        stage = x.get("stage") or "call"
+        mt = x.get("metrics") or {}
+        row = {
+            "stage": stage, "n": x.get("n") or x.get("attempt"), "ts": x.get("ts") or x.get("started_at"),
+            "ttft": x.get("ttft", mt.get("ttft")), "seconds": x.get("seconds", mt.get("duration")),
+            "prompt_tokens": mt.get("prompt_tokens", x.get("prompt_tokens")),
+            "cached_tokens": mt.get("prompt_cached_tokens"),
+            "completion_tokens": mt.get("completion_tokens", x.get("completion_tokens")),
+            "tokens_per_second": mt.get("tokens_per_second"), "reasoning_tokens": mt.get("reasoning_tokens"),
+            "tools_called": [t.get("name") for t in x.get("tool_calls") or [] if isinstance(t, dict)],
+            "cancelled": bool(x.get("cancelled")),
+            "ok": bool(x.get("ok", not x.get("error"))) and not x.get("cancelled"),
+            "failed": bool(x.get("error")),
+        }
+        if show_text:
+            row["reply"] = x.get("text") if stage == "call" else x.get("reply")
+            row["tool_calls"] = x.get("tool_calls") or []
+            row["error"] = x.get("error")
+        rows.append(row)
+    return rows
+
+
+def crm_rows(lines: list, *, show_text: bool) -> list:
+    """crm_changes.jsonl -> one row per CRM write. Everyone sees which fields changed; admins see the values."""
+    rows = []
+    for x in lines:
+        changed = x.get("changed") or {}
+        row = {"ts": x.get("ts"), "source": x.get("source") or "call", "action": x.get("action"),
+               "ok": bool(x.get("ok", True)), "seconds": x.get("seconds"), "fields": sorted(changed)}
+        if show_text:
+            row["changed"] = changed
+            row["error"] = x.get("error")
+        rows.append(row)
+    return rows
+
+
 def public_call(c: dict, *, full: bool, show_text: bool) -> dict:
-    hidden = {"ts", "ended_at", "metrics", "turns", *TEXT_FIELDS}
+    hidden = {"ts", "ended_at", "metrics", "turns", "errors", "llm_log", "crm_log", *TEXT_FIELDS}
     out = {k: v for k, v in c.items() if k not in hidden}
     out["ts"], out["ended_at"] = m.iso(c["ts"]), m.iso(c["ended_at"])
     out["tool_call_count"] = len(c["tool_calls"])
     if c["transfer"] and not show_text:
         out["transfer"] = {k: v for k, v in c["transfer"].items() if k != "reason"}
+    if c["error"] and not show_text:
+        out["error"] = "hidden"  # an exception message can quote what the caller said
     if full:
         out["turns"] = c["turns"]  # timings and tokens only
         for k in TEXT_FIELDS:
             out[k] = c[k] if show_text else None
+        # which stage failed and when, for everyone; the message itself for admins only
+        out["errors"] = [e if show_text else {k: v for k, v in e.items() if k in ("stage", "stage_label", "at",
+                                                                                   "recoverable")}
+                         for e in c["errors"]]
+        out["llm_requests"] = llm_rows(c.get("llm_log") or [], show_text=show_text)
+        out["crm_changes"] = crm_rows(c.get("crm_log") or [], show_text=show_text)
     return out
 
 
@@ -119,7 +221,7 @@ class VoiceCallSource:
         if not os.path.isdir(folder):
             return out
         for name in sorted(os.listdir(folder)):
-            if not name.endswith(".json"):
+            if not name.endswith(".json") or name.endswith(RAW_SUFFIX):
                 continue
             path = os.path.join(folder, name)
             try:
@@ -142,14 +244,29 @@ class VoiceCallSource:
         return sorted(out, key=lambda c: c["ts"], reverse=True)
 
     def call(self, call_id: str) -> Optional[dict]:
-        if not call_id or not _SAFE.match(call_id):
+        if not call_id or not _SAFE.match(call_id) or call_id.endswith(".raw") or call_id in (".", ".."):
             return None
         raw = _load(os.path.join(self.calls_dir, call_id + ".json"))
-        return parse_call(raw, call_id) if raw else None
+        if not raw:
+            return None
+        c = parse_call(raw, call_id)
+        # the call's own log folder: data/calls/<call_id>/ (only when the record is there too)
+        folder = os.path.join(self.calls_dir, call_id)
+        c["llm_log"] = _read_jsonl(os.path.join(folder, "llm.jsonl"))
+        c["crm_log"] = _read_jsonl(os.path.join(folder, "crm_changes.jsonl"))
+        return c
+
+    def processing(self) -> int:
+        """Calls whose post-call work hasn't finished: a raw file with no final record next to it."""
+        if not os.path.isdir(self.calls_dir):
+            return 0
+        names = set(os.listdir(self.calls_dir))
+        return sum(1 for n in names if n.endswith(RAW_SUFFIX) and n[:-len(RAW_SUFFIX)] + ".json" not in names)
 
     def status(self) -> dict:
         calls = self.calls()
         return {"data_dir": self.data_dir, "found": os.path.isdir(self.calls_dir), "calls": len(calls),
+                "processing": self.processing(),
                 "last_call": m.iso(calls[0]["ts"]) if calls else None,
                 "speech_runs": len(self._read_dir(self.evals_dir))}
 
@@ -171,7 +288,10 @@ class VoiceCallSource:
         tps = [t["tokens_per_second"] for t in turns if t.get("tokens_per_second")]
         by_model: dict = defaultdict(list)
         for c in reached:
-            by_model[c["models"].get("llm") or "not recorded"].append(c)
+            by_model[(c["models"].get("llm") or "not recorded", c["served_by"] or "")].append(c)
+        errors = Counter(e["stage_label"] for c in cs for e in c["errors"])
+        post = [c["post_call_llm"] for c in cs if c["post_call_llm"]]
+        post_secs = [p["seconds"] for p in post if p.get("seconds") is not None]
         return {
             "totals": {
                 "calls": n, "reached": len(reached),
@@ -185,7 +305,17 @@ class VoiceCallSource:
                 "tokens_per_second": m.rnd(sum(tps) / len(tps), 1) if tps else None,
                 "repeat_requests": sum(c["repeat_requests"] or 0 for c in cs),
                 "turns": len(turns),
+                "calls_with_errors": sum(1 for c in cs if c["error_count"]),
+                "errors": sum(c["error_count"] for c in cs),
+                "interruptions": sum(c["interruptions"] or 0 for c in cs),
+                "processing": self.processing(),
+                "post_call_checks": len(post),
+                "post_call_failed": sum(1 for p in post if not p.get("ok")),
+                "post_call_seconds_median": m.rnd(m.percentile(post_secs, 0.5), 2),
+                "post_call_tokens_per_call": round(sum((p.get("prompt_tokens") or 0) + (p.get("completion_tokens") or 0)
+                                                       for p in post) / len(post)) if post else None,
             },
+            "errors_by_stage": [{"label": k, "count": v} for k, v in errors.most_common()],
             "stages": [{"key": k, "label": label, **stage(k)} for k, label in STAGES],
             "slow_turn_seconds": SLOW_TURN_SECONDS,
             "slowest_stage": [{"label": k, "count": v} for k, v in slow.most_common()],
@@ -195,14 +325,15 @@ class VoiceCallSource:
                                for k, v in Counter(c["classification_label"] for c in cs).most_common()],
             "ended_by": [{"label": k, "count": v} for k, v in Counter(c["ended_by_label"] for c in cs).most_common()],
             "by_model": sorted([{
-                "model": mo, "calls": len(v),
+                "model": mo, "served_by": server or None, "calls": len(v),
                 "ttft_median": m.rnd(m.percentile([t["llm_ttft"] for c in v for t in c["turns"]
                                                    if t.get("llm_ttft") is not None], 0.5), 3),
                 "e2e_median": m.rnd(m.percentile([t["end_to_end"] for c in v for t in c["turns"]
                                                   if t.get("end_to_end") is not None], 0.5), 3),
                 "tokens_per_call": round(sum(c["tokens_total"] or 0 for c in v) / len(v)),
                 "qualified": sum(1 for c in v if c["classification"] == "qualified"),
-            } for mo, v in by_model.items()], key=lambda x: -x["calls"]),
+                "calls_with_errors": sum(1 for c in v if c["error_count"]),
+            } for (mo, server), v in by_model.items()], key=lambda x: -x["calls"]),
             "per_day": m.day_series(cs, self.tz, days, now=now),
             "heatmap": m.heatmap(cs, self.tz),
             "calls": [public_call(c, full=False, show_text=False) for c in cs[:100]],
