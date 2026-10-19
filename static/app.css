@@ -60,6 +60,12 @@ main { min-width: 0; padding: 20px 28px 48px; display: flex; flex-direction: col
 .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 2px; flex-wrap: wrap; }
 .seg button { border: 0; background: none; padding: 5px 11px; border-radius: 6px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
 .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+/* sub-tabs inside a page */
+.subtabs { margin-bottom: 14px; }
+.subtabs button { padding: 7px 14px; font-size: 14px; }
+.subtabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.subtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.panel { display: flex; flex-direction: column; gap: 14px; }
 select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; max-width: 100%; }
 input[type="search"] { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; min-width: 0; width: 220px; max-width: 100%; }
 

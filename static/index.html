@@ -15,7 +15,6 @@
       <button data-page="overview" aria-current="page"><span class="dot" style="background:var(--accent)"></span>Overview</button>
       <button data-page="whatsapp"><span class="dot" style="background:var(--s1)"></span>WhatsApp agent</button>
       <button data-page="calls"><span class="dot" style="background:var(--s2)"></span>Voice agent calls</button>
-      <button data-page="voice"><span class="dot" style="background:var(--s2)"></span>Voice agent tests</button>
       <div class="nav-label" style="margin-top:12px">Security</div>
       <button data-page="logins" data-admin><span class="dot" style="background:var(--ink-3)"></span>Logins</button>
     </nav>
@@ -40,40 +39,47 @@
 
     <!-- OVERVIEW -->
     <section data-view="overview">
-      <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="seg subtabs" role="tablist" aria-label="Overview sections">
+        <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="usage" aria-selected="false">Usage</button>
+        <button role="tab" data-tab="later" aria-selected="false">Not tracked yet</button>
+      </div>
+      <div class="panel" data-panel="summary">
         <div class="health" id="ovHealth"></div>
         <div class="kpis" id="ovKpis"></div>
+      </div>
+      <div class="panel" data-panel="usage" hidden>
         <div class="grid">
           <div class="card c6"><h2>WhatsApp questions per day</h2><div class="hint">All users, UAE time</div><div class="chart" id="ovWaDay"></div></div>
           <div class="card c6"><h2>WhatsApp cost per day</h2><div class="hint">Claude API cost in AED</div><div class="chart" id="ovWaCost"></div></div>
-          <div class="card c8">
-            <div class="card-head"><h2>When the agents are used</h2>
-              <div class="seg" role="group" aria-label="Agent for heatmap" id="heatSeg">
-                <button data-k="whatsapp" aria-pressed="true">WhatsApp questions</button><button data-k="voice" aria-pressed="false">Voice test calls</button>
-              </div></div>
+          <div class="card c12"><h2>When the WhatsApp agent is used</h2>
             <div class="hint" id="heatHint"></div>
             <div class="heat" id="heat"></div>
             <div class="ramp"><span>Fewer</span><span id="rampSw"></span><span>More</span></div>
           </div>
-          <div class="card c4">
-            <h2>Not tracked yet</h2>
-            <div class="hint">The agents don't save these today. Phase 1 and 2 add them.</div>
-            <ul class="later">
-              <li>WhatsApp: answer type and "confident" (computed, then dropped)</li>
-              <li>WhatsApp: tokens, which tools ran, tool errors</li>
-              <li>WhatsApp: user department, conversation link, feedback</li>
-              <li>Voice: tokens and model speed per reply</li>
-              <li>Voice: prompt version and test settings per run</li>
-              <li>Voice: audio, phone line, recordings (after LiveKit)</li>
-            </ul>
-          </div>
+        </div>
+      </div>
+      <div class="panel" data-panel="later" hidden>
+        <div class="card">
+          <h2>Not tracked yet</h2>
+          <div class="hint">The agents don't save these today. Phase 1 and 2 add them.</div>
+          <ul class="later">
+            <li>WhatsApp: answer type and "confident" (computed, then dropped)</li>
+            <li>WhatsApp: tokens, which tools ran, tool errors</li>
+            <li>WhatsApp: user department, conversation link, feedback</li>
+          </ul>
         </div>
       </div>
     </section>
 
     <!-- WHATSAPP -->
     <section data-view="whatsapp" hidden>
-      <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="seg subtabs" role="tablist" aria-label="WhatsApp sections">
+        <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="people" aria-selected="false">People &amp; models</button>
+        <button role="tab" data-tab="questions" aria-selected="false">Questions</button>
+      </div>
+      <div class="panel" data-panel="summary">
         <div class="kpis" id="waKpis"></div>
         <div class="grid">
           <div class="card c8"><h2>Questions per day</h2><div class="hint">UAE time</div><div class="chart" id="waDay"></div></div>
@@ -82,6 +88,10 @@
             <div class="hint">Worked out from the saved answer until Phase 1 saves the real answer type</div>
             <div class="bars" id="waOutcomes"></div>
           </div>
+        </div>
+      </div>
+      <div class="panel" data-panel="people" hidden>
+        <div class="grid">
           <div class="card c6"><h2>Who uses it most</h2><div class="hint">Top 10 by number of questions</div>
             <div class="tbl-wrap"><table><thead><tr><th>Person</th><th>Role</th><th class="r">Questions</th><th class="r">Answered</th><th class="r">Cost (AED)</th></tr></thead><tbody id="waUsers"></tbody></table></div>
           </div>
@@ -89,82 +99,79 @@
             <div class="tbl-wrap"><table><thead><tr><th>Model</th><th class="r">Questions</th><th class="r">Cost (AED)</th><th class="r">Typical time</th></tr></thead><tbody id="waModels"></tbody></table></div>
             <h2>Most cited sources</h2><div class="bars" id="waModules"></div>
           </div>
-          <div class="card c12">
-            <div class="card-head"><h2>Questions</h2>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <input type="search" id="waSearch" placeholder="Search question, answer or name" aria-label="Search questions">
-              </div>
+        </div>
+      </div>
+      <div class="panel" data-panel="questions" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Questions</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="search" id="waSearch" placeholder="Search question, answer or name" aria-label="Search questions">
             </div>
-            <div class="chips" id="waFilters"></div>
-            <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Question</th><th>Result</th><th>Signals</th><th class="r">Time</th><th class="r">Cost (AED)</th></tr></thead><tbody id="waRows"></tbody></table></div>
-            <div class="pager" id="waPager"></div>
           </div>
+          <div class="chips" id="waFilters"></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Question</th><th>Result</th><th>Signals</th><th class="r">Time</th><th class="r">Cost (AED)</th></tr></thead><tbody id="waRows"></tbody></table></div>
+          <div class="pager" id="waPager"></div>
         </div>
       </div>
     </section>
 
     <!-- VOICE CALLS (ev-voice-agent) -->
     <section data-view="calls" hidden>
-      <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="seg subtabs" role="tablist" aria-label="Voice call sections">
+        <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="speed" aria-selected="false">Speed</button>
+        <button role="tab" data-tab="quality" aria-selected="false">Quality</button>
+        <button role="tab" data-tab="list" aria-selected="false">Calls</button>
+      </div>
+      <div class="panel" data-panel="summary">
         <div class="kpis" id="vcKpis"></div>
+        <div class="grid">
+          <div class="card c4"><h2>Phone line</h2><div class="hint">What happened when the agent dialled</div><div class="bars wide" id="vcLine"></div></div>
+          <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
+          <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div></div>
+        </div>
+      </div>
+      <div class="panel" data-panel="speed" hidden>
         <div class="card"><h2>Waiting for the agent to answer</h2><div class="hint">Every turn: from the caller going quiet to the agent's first audio, and each stage of it</div>
           <div class="tbl-wrap"><table><thead><tr><th>Stage</th><th class="r">Shortest</th><th class="r">Typical</th><th class="r">Slowest 5%</th><th class="r">Longest</th><th class="r">Turns</th></tr></thead><tbody id="vcStages"></tbody></table></div>
         </div>
         <div class="grid">
-          <div class="card c4"><h2>Phone line</h2><div class="hint">What happened when the agent dialled</div><div class="bars wide" id="vcLine"></div></div>
-          <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
-          <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div>
-            <h2>What slows slow turns</h2><div class="hint" id="vcSlowHint"></div><div class="bars wide" id="vcSlow"></div></div>
-          <div class="card c6"><h2>Speech accuracy</h2><div class="hint">Latest run of <span class="num">python -m evals.run_speech</span> in the voice agent</div><div id="vcSpeech"></div></div>
-          <div class="card c6"><h2>Per model</h2><div class="hint">Answered calls only</div>
-            <div class="tbl-wrap"><table><thead><tr><th>LLM</th><th class="r">Calls</th><th class="r">First token (typical)</th><th class="r">Caller waits (typical)</th><th class="r">Tokens / call</th><th class="r">Qualified</th></tr></thead><tbody id="vcModels"></tbody></table></div>
-          </div>
-          <div class="card c12"><h2>Calls</h2><div class="hint">Click a call for every turn, the tools it used, the transcript and the result</div>
-            <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Lead</th><th>Phone line</th><th>Result</th><th>Ended</th><th class="r">Length</th><th class="r">First token</th><th class="r">Tokens</th><th>Recording</th><th>Person</th></tr></thead><tbody id="vcRows"></tbody></table></div>
+          <div class="card c4"><h2>What slows slow turns</h2><div class="hint" id="vcSlowHint"></div><div class="bars wide" id="vcSlow"></div></div>
+          <div class="card c8"><h2>Per model</h2><div class="hint">Answered calls only</div>
+            <div class="tbl-wrap"><table><thead><tr><th>LLM</th><th>Server</th><th class="r">Calls</th><th class="r">First token (typical)</th><th class="r">Caller waits (typical)</th><th class="r">Tokens / call</th><th class="r">Qualified</th><th class="r">With errors</th></tr></thead><tbody id="vcModels"></tbody></table></div>
           </div>
         </div>
       </div>
-    </section>
-
-    <!-- VOICE -->
-    <section data-view="voice" hidden>
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div class="card">
-          <div class="card-head"><h2>Test run</h2><select id="runSelect" aria-label="Test run"></select></div>
-          <div class="hint" id="runHint"></div>
-        </div>
-        <div class="card"><h2>Results per model</h2><div class="hint" id="targetsHint"></div>
-          <div class="tbl-wrap"><table><thead><tr><th>Model</th><th>Verdict</th><th class="r">Passed</th><th class="r">Field accuracy</th><th class="r">Agent closed the call</th><th class="r">Typical call length</th><th class="r">Tools rejected</th><th class="r">Code stepped in</th><th class="r">Errors</th></tr></thead><tbody id="vModels"></tbody></table></div>
-        </div>
-        <div class="card"><h2>Waiting for the agent to answer</h2><div class="hint">How long the lead waited after speaking, per reply: every model call plus every tool</div>
-          <div class="tbl-wrap"><table><thead><tr><th>Model</th><th class="r">Shortest</th><th class="r">Typical</th><th class="r">Longest</th><th>Longest reply, and why</th><th class="r">Model calls / reply</th><th class="r">Replies with thinking</th><th class="r">Tool calls as text</th></tr></thead><tbody id="vWaits"></tbody></table></div>
-        </div>
+      <div class="panel" data-panel="quality" hidden>
         <div class="grid">
-          <div class="card c6"><h2>How calls were classified</h2><div class="hint">From the lead's status after the call</div>
-            <div class="tbl-wrap"><table id="vClasses"></table></div>
-          </div>
-          <div class="card c6"><h2>Why replies are slow</h2><div class="hint" id="slowHint"></div><div class="bars wide" id="vSlow"></div></div>
-          <div class="card c8"><h2>Scenario results</h2><div class="hint">Click a cell to read the call</div>
-            <div class="tbl-wrap"><table class="matrix" id="vMatrix"></table></div>
-          </div>
-          <div class="card c4">
-            <h2>Fields it got wrong most</h2><div class="hint">All models in this run</div><div class="bars" id="vWrong"></div>
-            <h2>How calls ended</h2><div class="bars" id="vEnded"></div>
-          </div>
+          <div class="card c4"><h2>Errors</h2><div class="hint">Which stage failed. A call can have more than one.</div><div class="bars wide" id="vcErrors"></div></div>
+          <div class="card c4"><h2>Post-call check</h2><div class="hint">After each call the LLM reads the transcript and fills in the CRM</div><div id="vcPost"></div></div>
+          <div class="card c4"><h2>Speech accuracy</h2><div class="hint">Latest run of <span class="num">python -m evals.run_speech</span> in the voice agent</div><div id="vcSpeech"></div></div>
+        </div>
+      </div>
+      <div class="panel" data-panel="list" hidden>
+        <div class="card"><h2>Calls</h2><div class="hint">Click a call for every turn, the tools it used, the transcript and the result</div>
+          <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Lead</th><th>Phone line</th><th>Result</th><th>Ended</th><th class="r">Length</th><th class="r">First token</th><th class="r">Tokens</th><th>Errors</th><th>Recording</th><th>Person</th></tr></thead><tbody id="vcRows"></tbody></table></div>
         </div>
       </div>
     </section>
 
     <!-- LOGINS -->
     <section data-view="logins" hidden>
-      <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="seg subtabs" role="tablist" aria-label="Login sections">
+        <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="attempts" aria-selected="false">Recent attempts</button>
+      </div>
+      <div class="panel" data-panel="summary">
         <div class="kpis" id="lgKpis"></div>
         <div class="grid">
           <div class="card c6"><h2>Failed logins per day</h2><div class="hint">WhatsApp agent login page</div><div class="chart" id="lgFails"></div></div>
           <div class="card c6"><h2>Most failed attempts</h2><div class="hint">By identity and by IP address</div><div class="bars" id="lgIds"></div><div class="bars" id="lgIps"></div></div>
-          <div class="card c12"><h2>Recent attempts</h2>
-            <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Result</th><th>Reason</th><th>IP</th></tr></thead><tbody id="lgRows"></tbody></table></div>
-          </div>
+        </div>
+      </div>
+      <div class="panel" data-panel="attempts" hidden>
+        <div class="card"><h2>Recent attempts</h2>
+          <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Result</th><th>Reason</th><th>IP</th></tr></thead><tbody id="lgRows"></tbody></table></div>
         </div>
       </div>
     </section>
