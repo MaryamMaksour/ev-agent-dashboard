@@ -19,11 +19,12 @@ FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "voice_agent", "ca
 
 
 def write_calls(folder: str, n: int, start: datetime) -> None:
-    base = json.load(open(FIXTURE, encoding="utf-8"))
+    with open(FIXTURE, encoding="utf-8") as f:
+        base = json.load(f)
     os.makedirs(os.path.join(folder, "calls"), exist_ok=True)
     for i in range(n):
         r = copy.deepcopy(base)
-        st = start - timedelta(minutes=i * 30 * 24 * 60 / max(n, 1))
+        st = start - timedelta(minutes=i * 29 * 24 * 60 / max(n, 1))  # 29 days: all inside a 30-day range
         r["started_at"], r["ended_at"] = st.isoformat(), (st + timedelta(seconds=120)).isoformat()
         r["lead_id"] = f"L{i % 30000:05d}"  # about 30,000 clients, some called more than once
         with open(os.path.join(folder, "calls", f"lead-L{i:06d}-{st:%Y%m%dT%H%M%S}.json"), "w", encoding="utf-8") as f:
