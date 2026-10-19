@@ -188,6 +188,9 @@ RUN_SCALE_TEST=1 python -m unittest tests.test_scale -v
 
 | Setting | Default | What |
 |---|---|---|
+| `VOICE_GPU_COST_AED_MONTH` | 0 | The GPU server's cost per month. The dashboard shows each period's share |
+| `VOICE_OTHER_COST_AED_MONTH` | 0 | Any other fixed monthly cost of the voice agent (licences, hosting) |
+| `VOICE_LINE_COST_AED_MIN` | 0 | Phone line cost per answered minute |
 | `VOICE_CACHE_SECONDS` | 15 | The list of voice calls is reused for this long, so a page loads fast with tens of thousands of calls. New calls show up within this time. |
 
 ## Layout

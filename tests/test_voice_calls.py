@@ -87,6 +87,23 @@ class VoiceCallTests(unittest.TestCase):
             self.assertEqual((h["hours"][11]["at_once"], h["max_at_once"]), (1, 3))
             self.assertEqual(h["peak"], {"hour": 10, "calls": 3})
 
+    def test_cost(self):
+        from datetime import datetime
+        now = datetime(2026, 10, 19, tzinfo=timezone.utc)
+        src = VoiceCallSource(DATA, UAE, costs={"gpu_month": 3000, "other_month": 300, "line_minute": 0.5})
+        c = src.summary(None, now=now)["cost"]
+        self.assertTrue(c["configured"])
+        self.assertEqual(c["period_days"], 5)                    # first call 15 Oct to 19 Oct, UAE days
+        self.assertEqual(c["fixed"], 550.0)                      # (3000 + 300) x 5 / 30
+        self.assertEqual((c["line_minutes"], c["line"]), (3.1, 1.54))  # answered calls only: 185 s
+        self.assertEqual(c["total"], 551.54)
+        self.assertEqual((c["per_call"], c["per_reached"], c["per_qualified"]), (183.85, 275.77, None))
+        self.assertEqual(len(c["per_day"]), 5)
+        self.assertAlmostEqual(sum(d["value"] for d in c["per_day"]), 551.54, places=1)
+        week = src.summary(7, now=now)["cost"]
+        self.assertEqual((week["period_days"], week["fixed"]), (7, 770.0))
+        self.assertFalse(self.src.summary(None, now=now)["cost"]["configured"])   # nothing set
+
     def test_missing_folder(self):
         src = VoiceCallSource("/nonexistent", UAE)
         self.assertEqual(src.summary(30)["totals"]["calls"], 0)

@@ -256,12 +256,21 @@
         kpi("Asked for a person", num(t.transfer_asked), `${num(t.transferred)} transferred`),
         kpi("Recorded", num(t.recorded), `Agent asked the caller to repeat: ${num(t.repeat_requests)}`),
         kpi("Calls with errors", num(t.calls_with_errors), `${num(t.errors)} errors · caller interrupted ${num(t.interruptions)} times`),
+        ...(d.cost.configured ? [
+          kpi("Cost", aed(d.cost.total, 0), `${aed(d.cost.fixed, 0)} fixed · ${aed(d.cost.line, 0)} phone line`),
+          kpi("Cost per qualified lead", aed(d.cost.per_qualified, 0), `${num(d.cost.qualified)} qualified · ${aed(d.cost.per_call)} per call`),
+        ] : [kpi("Cost", "–", "Not set: VOICE_GPU_COST_AED_MONTH, VOICE_LINE_COST_AED_MIN")]),
       ].join("") + (t.processing ? `<div class="note">${num(t.processing)} call(s) still being processed (the post-call check hasn't finished). If this stays, run <span class="num">python -m agent.postcall</span> in the voice agent.</div>` : "");
     }
     $("#vcStages").innerHTML = d.stages.map((s, i) => `<tr><td>${i === 0 ? "<b>" : ""}${esc(s.label)}${i === 0 ? "</b>" : ""}</td><td class="r num">${secs(s.min)}</td><td class="r num">${secs(s.median)}</td><td class="r num">${secs(s.p95)}</td><td class="r num">${secs(s.max)}</td><td class="r num">${num(s.turns)}</td></tr>`).join("");
     const lineTone = { answered: "--good", busy: "--warn", no_answer: "--serious", browser: "--ink-3" };
     hbars($("#vcLine"), d.line_results.map((x) => ({ l: x.label, v: x.count, c: lineTone[x.key] || "--crit" })), { empty: "No calls in this period." });
     hbars($("#vcClass"), d.classification.map((x) => ({ l: x.label, v: x.count, c: "--s2" })), { empty: "No calls in this period." });
+    const k = d.cost;
+    $("#vcCostHint").textContent = k.configured
+      ? `${aed(k.monthly, 0)} a month fixed (shared over the days) + ${aed(k.line_rate)} per answered phone minute · ${num(k.line_minutes)} minutes in this period · ${aed(k.per_reached)} per reached call`
+      : "Set VOICE_GPU_COST_AED_MONTH (and VOICE_OTHER_COST_AED_MONTH, VOICE_LINE_COST_AED_MIN) in .env to see what the calls cost.";
+    dayBars($("#vcCostDay"), k.configured ? k.per_day : [], { name: "Cost", label: "Voice agent cost per day", color: "--s2", fmt: (v) => aed(v), empty: "Cost not set." });
     hbars($("#vcEnded"), d.ended_by.map((x) => ({ l: x.label, v: x.count, c: x.label.startsWith("Agent") ? "--good" : "--s1" })), { empty: "No calls." });
     $("#vcSlowHint").textContent = `Turns where the caller waited ${d.slow_turn_seconds} s or more`;
     hbars($("#vcSlow"), d.slowest_stage.map((x) => ({ l: x.label, v: x.count, c: "--crit" })), { empty: `No turn took ${d.slow_turn_seconds} s or more.` });

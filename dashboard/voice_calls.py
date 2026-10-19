@@ -20,7 +20,7 @@ import re
 import threading
 import time
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from . import metrics as m
@@ -223,8 +223,10 @@ def slim(c: dict) -> dict:
 
 
 class VoiceCallSource:
-    def __init__(self, data_dir: str, tz, cache_seconds: float = 15.0) -> None:
+    def __init__(self, data_dir: str, tz, cache_seconds: float = 15.0, costs: Optional[dict] = None) -> None:
         self.data_dir = data_dir
+        # AED: {"gpu_month", "other_month", "line_minute"}; all 0 = not set (see cost())
+        self.costs = {"gpu_month": 0.0, "other_month": 0.0, "line_minute": 0.0, **(costs or {})}
         self.calls_dir = os.path.join(data_dir, "calls")
         self.evals_dir = os.path.join(data_dir, "speech_evals")
         self.tz = tz
@@ -342,6 +344,38 @@ class VoiceCallSource:
     def summary(self, days: Optional[int], now=None) -> dict:
         return self._remember("summary", (days,), now, lambda: self._summary(days, now))
 
+    def cost(self, cs: list, days: Optional[int], now=None) -> dict:
+        """What the calls in the period cost, in AED: the period's share of the monthly costs (GPU server,
+        anything else fixed) plus phone minutes on answered calls. Per call, per reached call, per qualified lead."""
+        k = self.costs
+        monthly = (k["gpu_month"] or 0) + (k["other_month"] or 0)
+        rate = k["line_minute"] or 0
+        if days:
+            period = days
+        elif cs:
+            first = min(c["ts"] for c in cs).astimezone(self.tz).date()
+            period = max(1, ((now or datetime.now(timezone.utc)).astimezone(self.tz).date() - first).days + 1)
+        else:
+            period = 30
+        answered = [c for c in cs if c["line_result"] == "answered"]
+        minutes = sum((c["duration_seconds"] or 0) for c in answered) / 60
+        fixed, line = monthly * period / 30, minutes * rate
+        total = fixed + line
+        reached = sum(1 for c in cs if c["line_result"] in ("answered", "browser"))
+        qualified = sum(1 for c in cs if c["classification"] == "qualified")
+        line_per_day = m.day_series(answered, self.tz, period, now=now,
+                                    value=lambda c: (c["duration_seconds"] or 0) / 60 * rate)
+        per_day = [{**d, "value": round(d["value"] + monthly / 30, 2)} for d in line_per_day]
+        div = lambda a, b: round(a / b, 2) if b else None  # noqa: E731
+        return {
+            "configured": bool(monthly or rate), "currency": "AED", "period_days": period,
+            "monthly": round(monthly, 2), "line_rate": rate,
+            "fixed": round(fixed, 2), "line": round(line, 2), "line_minutes": round(minutes, 1),
+            "total": round(total, 2), "calls": len(cs), "reached": reached, "qualified": qualified,
+            "per_call": div(total, len(cs)), "per_reached": div(total, reached), "per_qualified": div(total, qualified),
+            "per_day": per_day,
+        }
+
     def _summary(self, days: Optional[int], now=None) -> dict:
         cs = self.calls(days, now)
         n = len(cs)
@@ -407,6 +441,7 @@ class VoiceCallSource:
                 "calls_with_errors": sum(1 for c in v if c["error_count"]),
             } for (mo, server), v in by_model.items()], key=lambda x: -x["calls"]),
             "per_day": m.day_series(cs, self.tz, days, now=now),
+            "cost": self.cost(cs, days, now),
             "heatmap": m.heatmap(cs, self.tz),
             "calls": [public_call(c, full=False, show_text=False) for c in cs[:100]],
             "speech": self.speech_latest(),

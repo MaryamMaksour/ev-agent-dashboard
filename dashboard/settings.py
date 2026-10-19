@@ -51,6 +51,9 @@ class Settings:
     tz_offset_hours: float = 4.0          # UAE time for charts (no daylight saving)
     voice_log_tz_offset_hours: float = 4.0  # voice test logs are written in server local time, without a zone
     voice_cache_seconds: float = 15.0     # how long the list of voice calls is reused before the folder is read again
+    voice_gpu_cost_aed_month: float = 0.0     # voice agent cost: the GPU server per month (AED)
+    voice_other_cost_aed_month: float = 0.0   # anything else fixed per month (licences, hosting...)
+    voice_line_cost_aed_min: float = 0.0      # phone line per answered minute
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -70,6 +73,9 @@ class Settings:
             tz_offset_hours=float(e("DASHBOARD_UTC_OFFSET_HOURS", "4")),
             voice_log_tz_offset_hours=float(e("VOICE_LOG_UTC_OFFSET_HOURS", "4")),
             voice_cache_seconds=float(e("VOICE_CACHE_SECONDS", "15")),
+            voice_gpu_cost_aed_month=float(e("VOICE_GPU_COST_AED_MONTH", "0") or 0),
+            voice_other_cost_aed_month=float(e("VOICE_OTHER_COST_AED_MONTH", "0") or 0),
+            voice_line_cost_aed_min=float(e("VOICE_LINE_COST_AED_MIN", "0") or 0),
         )
 
     @property
