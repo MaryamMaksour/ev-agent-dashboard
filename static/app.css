@@ -66,6 +66,13 @@ main { min-width: 0; padding: 20px 28px 48px; display: flex; flex-direction: col
 .subtabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .subtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .panel { display: flex; flex-direction: column; gap: 14px; }
+.alert-bar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; background: var(--surface); border: 1px solid var(--crit); border-left-width: 4px; border-radius: 8px; padding: 9px 12px; margin-bottom: 14px; font-size: 13px; }
+.alert-bar.warn { border-color: var(--warn); }
+.alert-bar button { margin-left: auto; border: 1px solid var(--line); background: var(--surface-2); border-radius: 6px; padding: 4px 10px; cursor: pointer; color: var(--ink); }
+.al-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.al-item:last-child { border-bottom: 0; }
+.al-item .what { font-size: 13px; color: var(--ink-2); }
+.al-item .todo { font-size: 12px; color: var(--ink-3); }
 .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--crit); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
 .fu-group { margin-top: 14px; }
 .fu-group h3 { margin: 0 0 2px; font-size: 14px; display: flex; gap: 8px; align-items: center; }

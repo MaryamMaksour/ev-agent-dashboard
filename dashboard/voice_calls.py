@@ -261,6 +261,7 @@ class VoiceCallSource:
         self._parsed: dict = {}   # path -> ((mtime, size), slim parsed call or None)
         self._listed: Optional[tuple] = None  # (monotonic expiry, [calls, newest first])
         self._memo: dict = {}     # (what, args) -> (the call list it was worked out from, result)
+        self._refreshing: set = set()
         self._lock = threading.Lock()
         self._names: dict = {}    # call id -> (lead name, status before the call) from events.jsonl
 
@@ -327,18 +328,37 @@ class VoiceCallSource:
             self._listed = (time.monotonic() + self.cache_seconds, out)
             return out
 
+    # above this many calls, a summary that is out of date is shown at once and worked out again in the
+    # background (2-4 s at 84,000 calls), so a page never waits for it; below it, it is worked out right away
+    BACKGROUND_REFRESH_CALLS = 5000
+
     def _remember(self, what: str, args: tuple, now, work):
         """Reuse a summary while the call list is the same one (see _all_calls); `now` is for tests."""
         if now is not None:
             return work()
         listed = self._all_calls()
-        hit = self._memo.get((what, args))
+        key = (what, args)
+        hit = self._memo.get(key)
         if hit and hit[0] is listed:
+            return hit[1]
+        if hit and len(listed) > self.BACKGROUND_REFRESH_CALLS:
+            if key not in self._refreshing:
+                self._refreshing.add(key)
+
+                def refresh() -> None:
+                    try:
+                        self._memo[key] = (listed, work())
+                    except Exception:  # keep the old answer; the next request tries again
+                        pass
+                    finally:
+                        self._refreshing.discard(key)
+
+                threading.Thread(target=refresh, daemon=True).start()
             return hit[1]
         value = work()
         if len(self._memo) > 64:
             self._memo.clear()
-        self._memo[(what, args)] = (listed, value)
+        self._memo[key] = (listed, value)
         return value
 
     def calls(self, days: Optional[int] = None, now=None) -> list:

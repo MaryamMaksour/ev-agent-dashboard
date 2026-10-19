@@ -25,6 +25,7 @@ def write_calls(folder: str, n: int, start: datetime) -> None:
         r = copy.deepcopy(base)
         st = start - timedelta(minutes=i * 30 * 24 * 60 / max(n, 1))
         r["started_at"], r["ended_at"] = st.isoformat(), (st + timedelta(seconds=120)).isoformat()
+        r["lead_id"] = f"L{i % 30000:05d}"  # about 30,000 clients, some called more than once
         with open(os.path.join(folder, "calls", f"lead-L{i:06d}-{st:%Y%m%dT%H%M%S}.json"), "w", encoding="utf-8") as f:
             json.dump(r, f)
 
@@ -56,6 +57,18 @@ class CacheTests(unittest.TestCase):
         self.assertIs(src.summary(None), first)                                 # within 60 s: same answer
         src._listed = None                                                      # the 60 s are over
         self.assertEqual(src.summary(None)["totals"]["calls"], 2)
+
+    def test_big_folders_refresh_in_the_background(self):
+        src = VoiceCallSource(self.dir, UAE, cache_seconds=0)
+        src.BACKGROUND_REFRESH_CALLS = 1                                        # as if there were many calls
+        self.assertEqual(src.summary(None)["totals"]["calls"], 3)
+        os.remove(os.path.join(self.dir, "calls", sorted(os.listdir(os.path.join(self.dir, "calls")))[0]))
+        self.assertEqual(src.summary(None)["totals"]["calls"], 3)              # old answer at once...
+        for _ in range(100):
+            if not src._refreshing:
+                break
+            time.sleep(0.02)
+        self.assertEqual(src.summary(None)["totals"]["calls"], 2)              # ...then the new one
 
     def test_lists_keep_no_transcript_but_the_detail_view_does(self):
         src = VoiceCallSource(self.dir, UAE, cache_seconds=0)

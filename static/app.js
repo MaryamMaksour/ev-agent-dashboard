@@ -292,6 +292,7 @@
     await renderHours();
     await renderClients();
     await renderFollowUp();
+    await renderCompliance();
     $("#vcRows").innerHTML = d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.lead_id)}</td><td><span class="pill ${lineCls[c.line_result] ?? "crit"}">${esc(c.line_label)}</span></td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="r num">${secs(c.ttft_median)}</td><td class="r num">${c.tokens_total ? num(c.tokens_total) : "–"}</td><td>${c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : '<span class="muted">–</span>'}</td><td>${c.recorded ? '<span class="pill good">Yes</span>' : c.recording ? '<span class="pill crit">Failed</span>' : '<span class="muted">–</span>'}</td><td>${c.transfer_asked ? `<span class="pill ${c.transferred ? "good" : "warn"}">${c.transferred ? "Transferred" : "Asked"}</span>` : '<span class="muted">–</span>'}</td></tr>`).join("") || `<tr><td colspan="11" class="empty">No calls in this period.</td></tr>`;
   }
   // tabs inside the drawer: [{ id, label, html }]; the first one opens
@@ -539,6 +540,56 @@
   $("#scrim").addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
 
+  // ---------- alerts: banner on every page + the Alerts tab ----------
+  async function renderAlerts() {
+    let d;
+    try { d = await api("/api/alerts"); } catch (e) { return; }  // never break a page over the banner
+    const bar = $("#alertBar"), n = d.alerts.length;
+    const b = $("#alBadge"); b.hidden = !n; b.textContent = String(n);
+    if (!n) { bar.hidden = true; } else {
+      bar.hidden = false;
+      bar.className = "alert-bar" + (d.crit ? "" : " warn");
+      bar.innerHTML = `<b>${n} alert${n > 1 ? "s" : ""}</b><span>${d.alerts.slice(0, 3).map((a) => esc(a.title)).join(" · ")}${n > 3 ? " · …" : ""}</span><button type="button" id="alertGo">View</button>`;
+    }
+    const level = { crit: '<span class="pill crit">Now</span>', warn: '<span class="pill warn">Look</span>' };
+    $("#alList").innerHTML = n ? d.alerts.map((a) => `<div class="al-item"><div>${level[a.level] || ""}</div><div><b>${esc(a.title)}</b>${a.since ? ` <span class="muted num">· ${esc(when(a.since))}</span>` : ""}
+      <div class="what">${esc(a.detail)}</div><div class="todo">What to do: ${esc(a.action)}</div></div></div>`).join("")
+      : `<div class="note">${d.found ? "No alerts. Everything checked looks fine." : "No voice agent data found yet."}</div>`;
+  }
+  $("#alertBar").addEventListener("click", (e) => {
+    if (!e.target.closest("#alertGo")) return;
+    state.tab.calls = "alerts"; go("calls");
+  });
+
+  // ---------- compliance, blocked dials, health, retention (Quality tab) ----------
+  async function renderCompliance() {
+    const d = await api(`/api/voicecalls/compliance?range=${state.range}`);
+    const c = d.compliance;
+    const zero = (n) => `<span class="pill ${n ? "crit" : "good"}">${num(n)}</span>`;
+    $("#cpHint").textContent = `Limits checked: ${c.limits.per_day} call per client a day, ${c.limits.per_week} a week; never after not-interested, do-not-call or wrong number. Each should be 0.`;
+    const leads = (rows) => rows.length ? `<small>${rows.slice(0, 8).map((r) => esc(r.lead_id)).join(", ")}${rows.length > 8 ? "…" : ""}</small>` : "";
+    $("#cpRules").innerHTML = `<div class="list">
+      <div class="li"><div>Clients called more than ${c.limits.per_day}× in a day${leads(c.over_daily_limit)}</div>${zero(c.over_daily_count)}</div>
+      <div class="li"><div>Clients called more than ${c.limits.per_week}× in 7 days${leads(c.over_weekly_limit)}</div>${zero(c.over_weekly_count)}</div>
+      <div class="li"><div>Called after not-interested / do-not-call / wrong number${leads(c.called_after_stop)}</div>${zero(c.called_after_stop_count)}</div>
+      <div class="li"><div>Answered phone calls recorded<small>${num(c.recorded)} of ${num(c.answered)} · ${num(c.phone_calls)} phone calls in this period</small></div><span class="pill">${pct(c.answered ? c.recorded / c.answered : null)}</span></div></div>`;
+    const b = d.blocked;
+    hbars($("#cpBlocked"), b.by_rule.map((x) => ({ l: x.label, v: x.count, c: x.rule === "llm_down" ? "--crit" : "--warn" })),
+      { empty: b.found ? "No dials stopped in this period." : "No blocked-dials log yet (needs the latest voice agent)." });
+    $("#cpBlockedRows").innerHTML = b.recent.length ? `<div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Client</th><th>Rule</th><th>Why</th></tr></thead><tbody>${b.recent.slice(0, 10).map((x) => `<tr><td class="num muted">${esc(when(x.ts))}</td><td class="num">${esc(x.lead_id)}</td><td>${esc(x.label)}</td><td class="muted">${esc(x.detail)}</td></tr>`).join("")}</tbody></table></div>` : "";
+    const h = d.health;
+    $("#cpHealthHint").textContent = !h.found ? "No health file yet: the latest voice agent writes data/health.json every minute."
+      : `Checked ${h.age_seconds != null ? (h.age_seconds < 120 ? `${h.age_seconds} s` : `${Math.round(h.age_seconds / 60)} min`) : "?"} ago${h.stale ? " — the check has stopped" : ""}.`;
+    $("#cpHealth").innerHTML = h.services.length ? `<div class="list">${h.services.map((s) => `<div class="li"><div>${esc(s.label)}${s.error ? `<small>${esc(s.error)}</small>` : s.seconds != null ? `<small>answered in ${secs(s.seconds)}</small>` : "<small>not checked</small>"}</div><span class="pill ${s.ok === true ? "good" : s.ok === false ? "crit" : ""}">${s.ok === true ? "Up" : s.ok === false ? "Down" : "–"}</span></div>`).join("")}</div>` : "";
+    const r = d.retention, z = r.sizes;
+    const mb = (bytes) => bytes == null ? "–" : bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : bytes >= 1e6 ? `${(bytes / 1e6).toFixed(0)} MB` : `${Math.ceil(bytes / 1e3)} KB`;
+    $("#cpRetHint").textContent = `Keep for ${r.days} days (VOICE_RETENTION_DAYS). ${r.note}`;
+    $("#cpRet").innerHTML = `<div class="list">
+      <div class="li"><div>Call records older than ${r.days} days<small>Oldest call: ${esc(when(r.oldest_call))} · ${num(r.calls)} calls in all</small></div><span class="pill ${r.calls_past_limit ? "warn" : "good"}">${num(r.calls_past_limit)}</span></div>
+      <div class="li"><div>Recordings older than ${r.days} days<small>${z ? `${num(z.recordings)} recordings · ${mb(z.recordings_bytes)}` : "Measuring…"}</small></div><span class="pill ${z && z.recordings_past_limit ? "warn" : "good"}">${z ? num(z.recordings_past_limit) : "…"}</span></div>
+      <div class="li"><div>Calls folder size<small>${z ? `${num(z.calls_files)} files · measured ${esc(when(z.measured_at))}` : "Measuring… (in the background, every 10 minutes)"}</small></div><span class="pill">${z ? mb(z.calls_bytes) : "…"}</span></div></div>`;
+  }
+
   // ---------- navigation ----------
   function showTab(page, tab) {
     const view = $(`[data-view="${page}"]`); if (!view) return;
@@ -558,6 +609,7 @@
     showTab(page, state.tab[page]);
     try { localStorage.setItem("evdash-page", page); } catch (e) { /* storage blocked */ }
     showError(null);
+    renderAlerts();
     try { await renderers[page](); } catch (e) { showError(e); }
   }
   $$(".nav button").forEach((b) => b.addEventListener("click", () => go(b.dataset.page)));

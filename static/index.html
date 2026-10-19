@@ -36,6 +36,7 @@
       </div>
     </div>
     <div id="error" class="error-box" hidden></div>
+    <div id="alertBar" class="alert-bar" hidden></div>
 
     <!-- OVERVIEW -->
     <section data-view="overview">
@@ -126,6 +127,7 @@
         <button role="tab" data-tab="speed" aria-selected="false">Speed</button>
         <button role="tab" data-tab="quality" aria-selected="false">Quality</button>
         <button role="tab" data-tab="list" aria-selected="false">Calls</button>
+        <button role="tab" data-tab="alerts" aria-selected="false">Alerts <span class="badge" id="alBadge" hidden></span></button>
       </div>
       <div class="panel" data-panel="summary">
         <div class="kpis" id="vcKpis"></div>
@@ -194,7 +196,14 @@
           <div class="card c4"><h2>Errors</h2><div class="hint">Which stage failed. A call can have more than one.</div><div class="bars wide" id="vcErrors"></div></div>
           <div class="card c4"><h2>Post-call check</h2><div class="hint">After each call the LLM reads the transcript and fills in the CRM</div><div id="vcPost"></div></div>
           <div class="card c4"><h2>Speech accuracy</h2><div class="hint">Latest run of <span class="num">python -m evals.run_speech</span> in the voice agent</div><div id="vcSpeech"></div></div>
+          <div class="card c6"><h2>Compliance</h2><div class="hint" id="cpHint"></div><div id="cpRules"></div></div>
+          <div class="card c6"><h2>Dials the rules stopped</h2><div class="hint">Written by the agent before ringing (data/blocked). These clients were not called.</div><div class="bars wide" id="cpBlocked"></div><div id="cpBlockedRows"></div></div>
+          <div class="card c6"><h2>Service health</h2><div class="hint" id="cpHealthHint"></div><div id="cpHealth"></div></div>
+          <div class="card c6"><h2>Retention</h2><div class="hint" id="cpRetHint"></div><div id="cpRet"></div></div>
         </div>
+      </div>
+      <div class="panel" data-panel="alerts" hidden>
+        <div class="card"><h2>Alerts</h2><div class="hint">Checked again every few seconds from the calls, the agent's health file and its blocked-dials log. Red needs action now; yellow needs a look.</div><div id="alList"></div></div>
       </div>
       <div class="panel" data-panel="list" hidden>
         <div class="card"><h2>Calls</h2><div class="hint">Click a call to see the client, the result, what changed in the CRM and the conversation</div>

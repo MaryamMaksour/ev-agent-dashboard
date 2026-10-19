@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
+from .alerts import OpsSettings, VoiceOps
 from .auth import LoginLimiter, Sessions, UserStore
 from .settings import Settings
 from .voice import VoiceTestSource, public_call
@@ -47,6 +48,10 @@ class App:
         self.voice_calls = VoiceCallSource(settings.voice_agent_data_dir, settings.tz, settings.voice_cache_seconds, costs={
             "gpu_month": settings.voice_gpu_cost_aed_month, "other_month": settings.voice_other_cost_aed_month,
             "line_minute": settings.voice_line_cost_aed_min})
+        self.voice_ops = VoiceOps(self.voice_calls, OpsSettings(
+            max_calls_per_day=settings.voice_max_calls_per_day, max_calls_per_week=settings.voice_max_calls_per_week,
+            retention_days=settings.voice_retention_days, alert_error_rate=settings.voice_alert_error_rate,
+            alert_wait_seconds=settings.voice_alert_wait_seconds, alert_quiet_hours=settings.voice_alert_quiet_hours))
         self._log_lock = threading.Lock()
 
     def access_log(self, event: str, **fields) -> None:
@@ -203,6 +208,12 @@ def make_handler(app: App):
                 return self.json(200, app.voice_calls.clients(days, q=qs.get("q", "")[:60], min_calls=min_calls,
                                                               sort=qs.get("sort", "calls"), offset=offset,
                                                               show_names=admin))
+            if path == "/api/alerts":
+                return self.json(200, app.voice_ops.alerts())
+            if path == "/api/voicecalls/compliance":
+                ops = app.voice_ops
+                return self.json(200, {"blocked": ops.blocked(days), "compliance": ops.compliance(days),
+                                       "retention": ops.retention(), "health": ops.health()})
             if path == "/api/voicecalls/followup":
                 return self.json(200, app.voice_calls.follow_up(show_text=admin))
             if path == "/api/voicecalls/client":

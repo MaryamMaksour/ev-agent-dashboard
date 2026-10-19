@@ -54,6 +54,12 @@ class Settings:
     voice_gpu_cost_aed_month: float = 0.0     # voice agent cost: the GPU server per month (AED)
     voice_other_cost_aed_month: float = 0.0   # anything else fixed per month (licences, hosting...)
     voice_line_cost_aed_min: float = 0.0      # phone line per answered minute
+    voice_max_calls_per_day: int = 1          # the voice agent's calling limits (MAX_CALLS_PER_DAY / _WEEK there)
+    voice_max_calls_per_week: int = 2
+    voice_retention_days: int = 365           # report call data older than this (nothing is ever deleted)
+    voice_alert_error_rate: float = 0.10      # alert when more than this share of the last 24 h's calls had an error
+    voice_alert_wait_seconds: float = 1.5     # alert when the typical caller wait (last 24 h) is above this
+    voice_alert_quiet_hours: float = 6.0      # alert when there has been no call for this long (0 = off)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -76,6 +82,12 @@ class Settings:
             voice_gpu_cost_aed_month=float(e("VOICE_GPU_COST_AED_MONTH", "0") or 0),
             voice_other_cost_aed_month=float(e("VOICE_OTHER_COST_AED_MONTH", "0") or 0),
             voice_line_cost_aed_min=float(e("VOICE_LINE_COST_AED_MIN", "0") or 0),
+            voice_max_calls_per_day=int(e("VOICE_MAX_CALLS_PER_DAY", "1")),
+            voice_max_calls_per_week=int(e("VOICE_MAX_CALLS_PER_WEEK", "2")),
+            voice_retention_days=int(e("VOICE_RETENTION_DAYS", "365")),
+            voice_alert_error_rate=float(e("VOICE_ALERT_ERROR_RATE", "0.10")),
+            voice_alert_wait_seconds=float(e("VOICE_ALERT_WAIT_SECONDS", "1.5")),
+            voice_alert_quiet_hours=float(e("VOICE_ALERT_QUIET_HOURS", "6")),
         )
 
     @property
