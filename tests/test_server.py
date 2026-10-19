@@ -129,7 +129,7 @@ class ServerTests(unittest.TestCase):
                      "/api/voicecalls/summary?range=all", "/api/speech/run?id=20261016T080000-round_trip",
                      "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000",
                      "/api/voicecalls/hours?range=all", "/api/voicecalls/hours?range=all&day=2026-10-16",
-                     "/api/voicecalls/clients?range=all&sort=last&min_calls=1", "/api/voicecalls/client?id=L001"):
+                     "/api/voicecalls/clients?range=all&sort=last&min_calls=1", "/api/voicecalls/client?id=L001", "/api/voicecalls/followup"):
             r, data = self.req("GET", path, cookie=admin)
             self.assertEqual(r.status, 200, path)
             json.loads(data)

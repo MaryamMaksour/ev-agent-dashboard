@@ -66,6 +66,10 @@ main { min-width: 0; padding: 20px 28px 48px; display: flex; flex-direction: col
 .subtabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .subtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .panel { display: flex; flex-direction: column; gap: 14px; }
+.badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--crit); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
+.fu-group { margin-top: 14px; }
+.fu-group h3 { margin: 0 0 2px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.fu-group .hint { margin-bottom: 6px; }
 /* tabs inside a call's detail panel stay visible while it scrolls */
 .dtabs { margin-bottom: 0; position: sticky; top: -16px; z-index: 1; align-self: flex-start; box-shadow: 0 0 0 6px var(--surface); }
 select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; max-width: 100%; }

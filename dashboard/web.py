@@ -203,6 +203,8 @@ def make_handler(app: App):
                 return self.json(200, app.voice_calls.clients(days, q=qs.get("q", "")[:60], min_calls=min_calls,
                                                               sort=qs.get("sort", "calls"), offset=offset,
                                                               show_names=admin))
+            if path == "/api/voicecalls/followup":
+                return self.json(200, app.voice_calls.follow_up(show_text=admin))
             if path == "/api/voicecalls/client":
                 client = app.voice_calls.client_calls(qs.get("id", ""), show_names=admin)
                 if not client:

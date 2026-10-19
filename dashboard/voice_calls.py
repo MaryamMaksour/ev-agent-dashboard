@@ -117,6 +117,12 @@ def parse_call(raw: dict, call_id: str) -> dict:
             callback_at = m.parse_ts(a["when"]) or callback_at
     if fallback and fallback.get("callback_at"):
         callback_at = m.parse_ts(fallback["callback_at"]) or callback_at
+    # hot / warm / cold: what the agent saved, else what the post-call check filled in or heard
+    interest = None
+    for a in actions:
+        if isinstance(a, dict) and a.get("interest_level"):
+            interest = a["interest_level"]
+    interest = interest or (raw.get("filled_after_call") or {}).get("interest_level") or extraction.get("interest_level")
     return {
         "id": call_id, "lead_id": raw.get("lead_id", "?"), "room": raw.get("room", ""),
         "ts": started, "ended_at": ended,
@@ -160,6 +166,7 @@ def parse_call(raw: dict, call_id: str) -> dict:
         # the post-call check heard a callback request; the agreed time is in the caller's words (admins only)
         "callback_requested": bool(callback_at or extraction.get("callback_requested") or cls == "callback"),
         "callback_text": extraction.get("callback_time_text"),
+        "interest_level": interest,
         "do_not_call": cls == "do_not_call" or any(isinstance(a, dict) and a.get("action") == "mark_do_not_call"
                                                    for a in actions),
     }
@@ -420,6 +427,62 @@ class VoiceCallSource:
                 "errors": sum(c["error_count"] for c in cs),
             })
         return rows
+
+    # ---------- sales follow-up ----------
+    FOLLOW_UP = [
+        ("callback", "Callback due", "The client agreed to be called back. Overdue first."),
+        ("person", "Asked for a person", "The client asked to speak to someone and wasn't transferred."),
+        ("hot", "Hot or qualified", "Qualified, or interest 'hot', in the last 7 days: hand to sales."),
+        ("llm_failure", "Call stopped by a technical problem", "The AI failed mid-call (the agent booked a callback)."),
+    ]
+
+    def follow_up(self, *, show_text: bool = False, now=None, per_group: int = 200) -> dict:
+        """Who the sales team should contact, from each client's calls. Read-only: an item goes away
+        when a newer call to that client happens (or, for hot leads, after 7 days). Do-not-call clients are left out."""
+        now = now or datetime.now(timezone.utc)
+        week_ago = now - timedelta(days=7)
+        by_lead: dict = defaultdict(list)
+        for c in self._all_calls():
+            by_lead[c["lead_id"]].append(c)  # newest first
+        groups: dict = {k: [] for k, _, _ in self.FOLLOW_UP}
+        for lead_id, cs in by_lead.items():
+            if any(c["do_not_call"] for c in cs):
+                continue
+            last = cs[0]
+            base = {"lead_id": lead_id, "last_ts": last["ts"], "last_call_id": last["id"],
+                    "last_label": last["classification_label"],
+                    "number": next((c["line"].get("number") for c in cs if c["line"] and c["line"].get("number")), None)}
+            if last["callback_requested"]:
+                due = last["callback_at"]
+                groups["callback"].append({**base, "call_id": last["id"], "due": due,
+                                           "when": "none" if not due else "overdue" if due < now
+                                           else "today" if due.astimezone(self.tz).date() == now.astimezone(self.tz).date()
+                                           else "later",
+                                           "callback_text": last["callback_text"] if show_text else None})
+            if last["transfer_asked"] and not last["transferred"]:
+                groups["person"].append({**base, "call_id": last["id"], "due": None})
+            if last["ts"] >= week_ago and (last["classification"] == "qualified" or last["interest_level"] == "hot"):
+                groups["hot"].append({**base, "call_id": last["id"], "due": None, "interest": last["interest_level"]})
+            if last["ended_by"] == "llm_failure" and last["ts"] >= week_ago:
+                groups["llm_failure"].append({**base, "call_id": last["id"], "due": last["callback_at"]})
+        order = {"overdue": 0, "today": 1, "later": 2, "none": 3}
+        groups["callback"].sort(key=lambda x: (order[x["when"]], x["due"] or x["last_ts"]))
+        for k in ("person", "hot", "llm_failure"):
+            groups[k].sort(key=lambda x: x["last_ts"], reverse=True)
+        out = []
+        for key, label, hint in self.FOLLOW_UP:
+            items = []
+            for x in groups[key][:per_group]:
+                item = {k: (m.iso(v) if isinstance(v, datetime) else v) for k, v in x.items()}
+                item["name"], item["summary"] = (None, None)
+                if show_text:
+                    item["name"] = self.lead_start(x["call_id"])[0]
+                    full = self.call(x["call_id"])
+                    item["summary"] = full["summary"] if full else None
+                items.append(item)
+            out.append({"key": key, "label": label, "hint": hint, "count": len(groups[key]), "items": items})
+        return {"groups": out, "total": sum(g["count"] for g in out),
+                "overdue": sum(1 for x in groups["callback"] if x["when"] == "overdue")}
 
     def client_calls(self, lead_id: str, *, show_names: bool = False) -> Optional[dict]:
         """Every call with this client, newest first (numbers only; open a call for the rest)."""

@@ -291,6 +291,7 @@
     const lineCls = { answered: "good", busy: "warn", no_answer: "serious", browser: "" };
     await renderHours();
     await renderClients();
+    await renderFollowUp();
     $("#vcRows").innerHTML = d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.lead_id)}</td><td><span class="pill ${lineCls[c.line_result] ?? "crit"}">${esc(c.line_label)}</span></td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="r num">${secs(c.ttft_median)}</td><td class="r num">${c.tokens_total ? num(c.tokens_total) : "–"}</td><td>${c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : '<span class="muted">–</span>'}</td><td>${c.recorded ? '<span class="pill good">Yes</span>' : c.recording ? '<span class="pill crit">Failed</span>' : '<span class="muted">–</span>'}</td><td>${c.transfer_asked ? `<span class="pill ${c.transferred ? "good" : "warn"}">${c.transferred ? "Transferred" : "Asked"}</span>` : '<span class="muted">–</span>'}</td></tr>`).join("") || `<tr><td colspan="11" class="empty">No calls in this period.</td></tr>`;
   }
   // tabs inside the drawer: [{ id, label, html }]; the first one opens
@@ -353,6 +354,25 @@
     $("#hrBottleneck").innerHTML = `<div class="list">${lines.join("")}</div>`;
     $("#hrSub").textContent = state.hrDay ? `${dayName(state.hrDay)} · ${num(d.calls)} calls · UAE time` : `${num(d.calls)} calls in this period · UAE time`;
     heatmap(d.heatmap, "Voice agent calls", { el: "#vcHeat", sw: "#vcRampSw", hint: "#vcHeatHint" });
+  }
+
+  // ---------- sales follow-up ----------
+  async function renderFollowUp() {
+    const d = await api("/api/voicecalls/followup");
+    const admin = state.me.role === "admin";
+    const badge = $("#fuBadge");
+    badge.hidden = !d.total; badge.textContent = d.total > 99 ? "99+" : String(d.total);
+    badge.title = d.overdue ? `${d.overdue} callback(s) overdue` : "";
+    const whenPill = { overdue: '<span class="pill crit">Overdue</span>', today: '<span class="pill warn">Today</span>',
+      later: '<span class="pill">Later</span>', none: '<span class="pill">No time set</span>' };
+    $("#fuGroups").innerHTML = d.groups.map((g) => `<div class="fu-group"><h3>${esc(g.label)} <span class="pill ${g.count ? (g.key === "callback" && d.overdue ? "crit" : "warn") : "good"}">${num(g.count)}</span></h3>
+      <div class="hint">${esc(g.hint)}${g.count > g.items.length ? ` Showing the first ${g.items.length}.` : ""}</div>
+      ${g.items.length ? `<div class="tbl-wrap"><table><thead><tr><th>Client</th><th>Number</th>${g.key === "callback" ? "<th>Due</th>" : ""}<th>Last call</th><th>Result</th>${admin ? "<th>Summary</th>" : ""}</tr></thead><tbody>${g.items.map((x) => `<tr class="click" tabindex="0" data-vcall="${esc(x.call_id)}">
+        <td>${admin && x.name ? `<b>${esc(x.name)}</b><br><span class="muted num">${esc(x.lead_id)}</span>` : `<span class="num">${esc(x.lead_id)}</span>`}</td>
+        <td class="num muted">${esc(x.number || "–")}</td>
+        ${g.key === "callback" ? `<td>${whenPill[x.when] || ""} <span class="num">${x.due ? esc(when(x.due)) : admin && x.callback_text ? `“${esc(x.callback_text)}”` : ""}</span></td>` : ""}
+        <td class="num muted">${esc(when(x.last_ts))}</td><td>${esc(x.last_label)}${x.interest ? ` <span class="pill ${x.interest === "hot" ? "crit" : ""}">${esc(x.interest)}</span>` : ""}</td>
+        ${admin ? `<td class="muted">${esc(x.summary || "–")}</td>` : ""}</tr>`).join("")}</tbody></table></div>` : '<div class="muted">Nobody right now.</div>'}</div>`).join("");
   }
 
   // ---------- calls grouped by client ----------

@@ -139,6 +139,46 @@ class VoiceCallTests(unittest.TestCase):
             self.assertEqual(row["callback_at"], "2026-10-17T06:00:00+00:00")
             self.assertEqual(src.clients(None, min_calls=3)["total"], 1)
 
+    def test_follow_up(self):
+        from datetime import datetime
+
+        def rec(lead, start, **extra):
+            return {"lead_id": lead, "started_at": start, "ended_at": start, **extra}
+
+        calls = {
+            "a": rec("L1", "2026-10-18T10:00:00+04:00", classification="callback",
+                     actions=[{"action": "schedule_callback", "when": "2026-10-18T16:00:00+04:00"}]),   # overdue
+            "b": rec("L2", "2026-10-19T09:00:00+04:00", classification="callback",
+                     actions=[{"action": "schedule_callback", "when": "2026-10-19T17:00:00+04:00"}]),   # today
+            "c": rec("L3", "2026-10-19T09:00:00+04:00", classification="callback",
+                     actions=[{"action": "schedule_callback", "when": "2026-10-22T10:00:00+04:00"}]),   # later
+            "d1": rec("L4", "2026-10-17T09:00:00+04:00", classification="callback",
+                      actions=[{"action": "schedule_callback", "when": "2026-10-18T10:00:00+04:00"}]),
+            "d2": rec("L4", "2026-10-18T10:00:00+04:00", classification="not_interested"),          # called again: done
+            "e": rec("L5", "2026-10-19T09:00:00+04:00", transfer={"ok": False, "error": "busy"}),  # asked for a person
+            "f": rec("L6", "2026-10-18T09:00:00+04:00", classification="interested",
+                     actions=[{"action": "update_lead", "interest_level": "hot"}]),                   # hot
+            "g": rec("L7", "2026-10-01T09:00:00+04:00", classification="qualified"),                 # too old
+            "h": rec("L8", "2026-10-19T09:00:00+04:00", ended_by="llm_failure",
+                     fallback={"reason": "llm", "callback_at": "2026-10-19T06:00:00+00:00"}),        # LLM failed
+            "i": rec("L9", "2026-10-19T09:00:00+04:00", classification="do_not_call",
+                     transfer={"ok": False}),                                                        # never listed
+        }
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "calls"))
+            for name, r in calls.items():
+                with open(os.path.join(d, "calls", f"lead-{name}.json"), "w", encoding="utf-8") as f:
+                    json.dump(r, f)
+            f = VoiceCallSource(d, UAE).follow_up(now=datetime(2026, 10, 19, 8, tzinfo=timezone.utc))  # 12:00 UAE
+        g = {x["key"]: x for x in f["groups"]}
+        self.assertEqual([(x["lead_id"], x["when"]) for x in g["callback"]["items"]],
+                         [("L1", "overdue"), ("L8", "overdue"), ("L2", "today"), ("L3", "later")])
+        self.assertEqual([x["lead_id"] for x in g["person"]["items"]], ["L5"])
+        self.assertEqual([x["lead_id"] for x in g["hot"]["items"]], ["L6"])
+        self.assertEqual([x["lead_id"] for x in g["llm_failure"]["items"]], ["L8"])
+        self.assertEqual((f["total"], f["overdue"]), (7, 2))
+        self.assertIsNone(g["callback"]["items"][0]["name"])            # viewers: no names, no summaries
+
     def test_missing_folder(self):
         src = VoiceCallSource("/nonexistent", UAE)
         self.assertEqual(src.summary(30)["totals"]["calls"], 0)

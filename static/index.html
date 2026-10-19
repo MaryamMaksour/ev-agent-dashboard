@@ -120,6 +120,7 @@
     <section data-view="calls" hidden>
       <div class="seg subtabs" role="tablist" aria-label="Voice call sections">
         <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="followup" aria-selected="false">Follow-up <span class="badge" id="fuBadge" hidden></span></button>
         <button role="tab" data-tab="clients" aria-selected="false">Clients</button>
         <button role="tab" data-tab="busy" aria-selected="false">Busy hours</button>
         <button role="tab" data-tab="speed" aria-selected="false">Speed</button>
@@ -133,6 +134,13 @@
           <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
           <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div></div>
           <div class="card c12"><h2>Cost per day</h2><div class="hint" id="vcCostHint"></div><div class="chart" id="vcCostDay"></div></div>
+        </div>
+      </div>
+      <div class="panel" data-panel="followup" hidden>
+        <div class="card">
+          <h2>Sales follow-up</h2>
+          <div class="hint">Who to contact, worked out from the calls. A client leaves this list when the agent calls them again. Clients marked do-not-call never show. Click a row to open the call.</div>
+          <div id="fuGroups"></div>
         </div>
       </div>
       <div class="panel" data-panel="clients" hidden>
