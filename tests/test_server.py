@@ -127,10 +127,15 @@ class ServerTests(unittest.TestCase):
         for path in ("/api/me", "/api/status", "/api/overview?range=all", "/api/whatsapp/summary?range=7",
                      "/api/whatsapp/logins?range=all", "/api/voice/runs", "/api/voice/run?id=20261015-101500",
                      "/api/voicecalls/summary?range=all", "/api/speech/run?id=20261016T080000-round_trip",
-                     "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000"):
+                     "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000",
+                     "/api/voicecalls/hours?range=all", "/api/voicecalls/hours?range=all&day=2026-10-16",
+                     "/api/voicecalls/clients?range=all&sort=last&min_calls=1", "/api/voicecalls/client?id=L001"):
             r, data = self.req("GET", path, cookie=admin)
             self.assertEqual(r.status, 200, path)
             json.loads(data)
+        for path in ("/api/voicecalls/hours?day=19-10-2026", "/api/voicecalls/clients?offset=x"):
+            self.assertEqual(self.req("GET", path, cookie=admin)[0].status, 400, path)
+        self.assertEqual(self.req("GET", "/api/voicecalls/client?id=../x", cookie=admin)[0].status, 404)
         r, data = self.req("GET", "/", cookie=admin)
         self.assertEqual(r.status, 200)
         self.assertIn(b"EV Agent Dashboard", data)

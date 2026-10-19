@@ -104,6 +104,41 @@ class VoiceCallTests(unittest.TestCase):
         self.assertEqual((week["period_days"], week["fixed"]), (7, 770.0))
         self.assertFalse(self.src.summary(None, now=now)["cost"]["configured"])   # nothing set
 
+    def test_clients(self):
+        from datetime import datetime
+        now = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
+        r = self.src.clients(None, now=now)
+        self.assertEqual(r["total"], 3)
+        by = {x["lead_id"]: x for x in r["items"]}
+        self.assertEqual((by["L001"]["calls"], by["L001"]["reached"], by["L001"]["attempts_today"]), (1, 1, 1))
+        self.assertTrue(by["L001"]["transferred"])
+        self.assertEqual(by["L002"]["number"], "+97150*****02")           # masked, as the agent saved it
+        self.assertEqual((by["L003"]["phone_calls"], by["L003"]["attempts_7d"]), (0, 0))  # browser test: no attempt
+        self.assertTrue(by["L003"]["callback_requested"])
+        self.assertIsNone(by["L001"]["name"])                               # names only for admins
+        self.assertEqual(self.src.clients(None, q="l002", now=now)["total"], 1)
+        self.assertEqual(self.src.clients(None, min_calls=2, now=now)["total"], 0)
+        self.assertEqual(self.src.clients(1, now=now.replace(hour=13))["total"], 2)  # only clients called in the period
+        self.assertEqual(self.src.client_calls("L001")["calls"][0]["lead_id"], "L001")
+        self.assertIsNone(self.src.client_calls("../x"))
+        self.assertIsNone(self.src.client_calls("L999"))
+
+    def test_clients_called_several_times(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "calls"))
+            for i, (day, hour) in enumerate([(16, 9), (16, 11), (14, 9), (5, 9)]):
+                with open(os.path.join(d, "calls", f"lead-L7-{i}.json"), "w", encoding="utf-8") as f:
+                    json.dump({"lead_id": "L7", "started_at": f"2026-10-{day:02d}T{hour:02d}:00:00+04:00",
+                               "line": {"result": "no_answer", "number": "+97150*****77"},
+                               "actions": [{"action": "schedule_callback", "when": "2026-10-17T10:00:00+04:00"}]
+                               if i == 1 else []}, f)
+            from datetime import datetime
+            src = VoiceCallSource(d, UAE)
+            row = src.clients(None, now=datetime(2026, 10, 16, 12, tzinfo=timezone.utc))["items"][0]
+            self.assertEqual((row["calls"], row["attempts_today"], row["attempts_7d"]), (4, 2, 3))
+            self.assertEqual(row["callback_at"], "2026-10-17T06:00:00+00:00")
+            self.assertEqual(src.clients(None, min_calls=3)["total"], 1)
+
     def test_missing_folder(self):
         src = VoiceCallSource("/nonexistent", UAE)
         self.assertEqual(src.summary(30)["totals"]["calls"], 0)
@@ -153,6 +188,9 @@ class VoiceCallV2Tests(unittest.TestCase):
         self.assertEqual([x["source"] for x in crm], ["call", "post_call", "post_call"])
         self.assertEqual(crm[0]["changed"]["budget"], {"before": None, "after": 2000000})
         self.assertEqual((full["lead_name"], full["lead_status_before"]), ("Omar Test", "new"))
+        self.assertEqual(self.src.clients(None, show_names=True)["items"][0]["name"], "Omar Test")
+        self.assertEqual(self.src.client_calls(full["lead_id"], show_names=True)["name"], "Omar Test")
+        self.assertIsNone(self.src.client_calls(full["lead_id"])["name"])
 
     def test_viewer_gets_no_text_from_new_fields(self):
         v = public_call(self.src.call(V2_CALL), full=True, show_text=False)

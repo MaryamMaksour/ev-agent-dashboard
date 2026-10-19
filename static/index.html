@@ -120,6 +120,7 @@
     <section data-view="calls" hidden>
       <div class="seg subtabs" role="tablist" aria-label="Voice call sections">
         <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="clients" aria-selected="false">Clients</button>
         <button role="tab" data-tab="busy" aria-selected="false">Busy hours</button>
         <button role="tab" data-tab="speed" aria-selected="false">Speed</button>
         <button role="tab" data-tab="quality" aria-selected="false">Quality</button>
@@ -132,6 +133,22 @@
           <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
           <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div></div>
           <div class="card c12"><h2>Cost per day</h2><div class="hint" id="vcCostHint"></div><div class="chart" id="vcCostDay"></div></div>
+        </div>
+      </div>
+      <div class="panel" data-panel="clients" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Clients</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="search" id="clSearch" placeholder="Search lead ID or name" aria-label="Search clients">
+              <select id="clSort" aria-label="Sort clients">
+                <option value="calls">Most calls</option><option value="last">Latest call</option><option value="today">Most calls today</option>
+              </select>
+            </div>
+          </div>
+          <div class="hint">Every client called in this period, with how many times. "Today" and "7 days" count every phone call, to check the calling limits. Click a client for all their calls.</div>
+          <div class="chips" id="clFilters"></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Client</th><th>Number</th><th class="r">Calls</th><th class="r">Reached</th><th class="r">Today</th><th class="r">7 days</th><th>Last call</th><th>Last result</th><th>Callback</th><th>Flags</th></tr></thead><tbody id="clRows"></tbody></table></div>
+          <div class="pager" id="clPager"></div>
         </div>
       </div>
       <div class="panel" data-panel="busy" hidden>

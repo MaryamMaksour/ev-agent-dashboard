@@ -195,6 +195,19 @@ def make_handler(app: App):
                 if day and not _DAY.match(day):
                     return self.json(400, {"error": "day must look like 2026-10-19."})
                 return self.json(200, app.voice_calls.hours(days, day or None))
+            if path == "/api/voicecalls/clients":
+                try:
+                    offset, min_calls = max(0, int(qs.get("offset", "0"))), max(0, int(qs.get("min_calls", "0")))
+                except ValueError:
+                    return self.json(400, {"error": "offset and min_calls must be numbers."})
+                return self.json(200, app.voice_calls.clients(days, q=qs.get("q", "")[:60], min_calls=min_calls,
+                                                              sort=qs.get("sort", "calls"), offset=offset,
+                                                              show_names=admin))
+            if path == "/api/voicecalls/client":
+                client = app.voice_calls.client_calls(qs.get("id", ""), show_names=admin)
+                if not client:
+                    return self.json(404, {"error": "No calls found for that client."})
+                return self.json(200, client)
             if path == "/api/voicecalls/call":
                 call = app.voice_calls.call(qs.get("id", ""))
                 if not call:

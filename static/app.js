@@ -25,7 +25,7 @@
     return Math.round(s / 86400) + " days ago";
   };
 
-  const state = { me: null, page: "overview", range: "30", data: {}, wa: { outcome: "", flag: "", q: "", offset: 0 }, tab: {}, hrDay: "" };
+  const state = { me: null, page: "overview", range: "30", data: {}, wa: { outcome: "", flag: "", q: "", offset: 0 }, tab: {}, hrDay: "", cl: { q: "", sort: "calls", min: 0, offset: 0 } };
 
   async function api(path) {
     const r = await fetch(path, { credentials: "same-origin", headers: { Accept: "application/json" } });
@@ -290,6 +290,7 @@
     $("#vcModels").innerHTML = d.by_model.map((x) => `<tr><td class="num">${esc(x.model)}</td><td>${x.served_by ? `<span class="pill ${x.served_by === "vllm" ? "good" : "warn"}">${esc(x.served_by)}</span>` : '<span class="muted">–</span>'}</td><td class="r num">${x.calls}</td><td class="r num">${secs(x.ttft_median)}</td><td class="r num">${secs(x.e2e_median)}</td><td class="r num">${num(x.tokens_per_call)}</td><td class="r num">${x.qualified}</td><td class="r num">${x.calls_with_errors}</td></tr>`).join("") || `<tr><td colspan="8" class="empty">No answered calls.</td></tr>`;
     const lineCls = { answered: "good", busy: "warn", no_answer: "serious", browser: "" };
     await renderHours();
+    await renderClients();
     $("#vcRows").innerHTML = d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.lead_id)}</td><td><span class="pill ${lineCls[c.line_result] ?? "crit"}">${esc(c.line_label)}</span></td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="r num">${secs(c.ttft_median)}</td><td class="r num">${c.tokens_total ? num(c.tokens_total) : "–"}</td><td>${c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : '<span class="muted">–</span>'}</td><td>${c.recorded ? '<span class="pill good">Yes</span>' : c.recording ? '<span class="pill crit">Failed</span>' : '<span class="muted">–</span>'}</td><td>${c.transfer_asked ? `<span class="pill ${c.transferred ? "good" : "warn"}">${c.transferred ? "Transferred" : "Asked"}</span>` : '<span class="muted">–</span>'}</td></tr>`).join("") || `<tr><td colspan="11" class="empty">No calls in this period.</td></tr>`;
   }
   // tabs inside the drawer: [{ id, label, html }]; the first one opens
@@ -352,6 +353,43 @@
     $("#hrBottleneck").innerHTML = `<div class="list">${lines.join("")}</div>`;
     $("#hrSub").textContent = state.hrDay ? `${dayName(state.hrDay)} · ${num(d.calls)} calls · UAE time` : `${num(d.calls)} calls in this period · UAE time`;
     heatmap(d.heatmap, "Voice agent calls", { el: "#vcHeat", sw: "#vcRampSw", hint: "#vcHeatHint" });
+  }
+
+  // ---------- calls grouped by client ----------
+  async function renderClients() {
+    const c = state.cl;
+    const chips = [[0, "All clients"], [2, "Called 2+ times"], [3, "Called 3+ times"]];
+    $("#clFilters").innerHTML = chips.map(([n, l]) => `<button type="button" data-min="${n}" aria-pressed="${c.min === n}">${esc(l)}</button>`).join("");
+    const qs = new URLSearchParams({ range: state.range, q: c.q, sort: c.sort, min_calls: c.min, offset: c.offset });
+    const d = await api(`/api/voicecalls/clients?${qs}`);
+    const admin = state.me.role === "admin";
+    const flags = (r) => [
+      r.do_not_call && '<span class="pill crit">Do not call</span>',
+      r.transferred && '<span class="pill good">Transferred</span>',
+      r.errors && `<span class="pill crit">${num(r.errors)} error${r.errors > 1 ? "s" : ""}</span>`,
+      r.attempts_today > 1 && '<span class="pill warn">Over 1 today</span>',
+      r.attempts_7d > 2 && '<span class="pill warn">Over 2 this week</span>',
+    ].filter(Boolean).join(" ") || '<span class="muted">–</span>';
+    $("#clRows").innerHTML = d.items.map((r) => `<tr class="click" tabindex="0" data-client="${esc(r.lead_id)}">
+      <td>${admin && r.name ? `<b>${esc(r.name)}</b><br><span class="muted num">${esc(r.lead_id)}</span>` : `<span class="num">${esc(r.lead_id)}</span>`}</td>
+      <td class="num muted">${esc(r.number || "–")}</td>
+      <td class="r num"><b>${num(r.calls)}</b></td><td class="r num">${num(r.reached)}</td>
+      <td class="r num">${num(r.attempts_today)}</td><td class="r num">${num(r.attempts_7d)}</td>
+      <td class="num muted">${esc(when(r.last_ts))}</td>
+      <td>${esc(r.last_label)}<br><span class="muted">${esc(r.last_line)}</span></td>
+      <td>${r.callback_at ? `<span class="num">${esc(when(r.callback_at))}</span>` : r.callback_requested ? '<span class="muted">Asked, no time</span>' : '<span class="muted">–</span>'}</td>
+      <td>${flags(r)}</td></tr>`).join("") || `<tr><td colspan="10" class="empty">No clients in this period.</td></tr>`;
+    const from = d.total ? c.offset + 1 : 0, to = Math.min(c.offset + d.limit, d.total);
+    $("#clPager").innerHTML = `<span>${from}–${to} of ${num(d.total)} clients</span><button type="button" data-p="-1" ${c.offset === 0 ? "disabled" : ""}>Previous</button><button type="button" data-p="1" ${to >= d.total ? "disabled" : ""}>Next</button>`;
+  }
+  async function openClient(id) {
+    const d = await api(`/api/voicecalls/client?id=${encodeURIComponent(id)}`);
+    $("#dTitle").textContent = d.name ? `${d.name} · ${d.lead_id}` : d.lead_id;
+    const phone = d.calls.filter((c) => c.line).length;
+    $("#dMeta").innerHTML = [`${d.calls.length} calls`, `${phone} by phone`].map((x) => `<span>${esc(x)}</span>`).join("");
+    openDrawer(`<div class="hint">Every call with this client, newest first. Click one for its details.</div>
+      <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Phone line</th><th>Result</th><th>Ended</th><th class="r">Length</th><th>Callback</th></tr></thead><tbody>${
+      d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.line_label)}</td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="num">${c.callback_at ? esc(when(c.callback_at)) : "–"}</td></tr>`).join("")}</tbody></table></div>`);
   }
 
   async function openVoiceCall(id) {
@@ -536,6 +574,20 @@
     state.wa.offset = 0;
     renderFilters(); renderQuestions().catch(showError);
   });
+  let clSearchT;
+  $("#clSearch").addEventListener("input", (e) => {
+    clearTimeout(clSearchT);
+    clSearchT = setTimeout(() => { state.cl.q = e.target.value.trim(); state.cl.offset = 0; renderClients().catch(showError); }, 250);
+  });
+  $("#clSort").addEventListener("change", (e) => { state.cl.sort = e.target.value; state.cl.offset = 0; renderClients().catch(showError); });
+  $("#clFilters").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-min]"); if (!b) return;
+    state.cl.min = Number(b.dataset.min); state.cl.offset = 0; renderClients().catch(showError);
+  });
+  $("#clPager").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-p]"); if (!b || b.disabled) return;
+    state.cl.offset = Math.max(0, state.cl.offset + Number(b.dataset.p) * 50); renderClients().catch(showError);
+  });
   $("#hrDay").addEventListener("change", (e) => { state.hrDay = e.target.value; renderHours().catch(showError); });
   let searchT;
   $("#waSearch").addEventListener("input", (e) => {
@@ -550,12 +602,14 @@
   document.addEventListener("click", (e) => {
     const q = e.target.closest("tr[data-q]"); if (q) openQuestion(q.dataset.q).catch(showError);
     const vc = e.target.closest("tr[data-vcall]"); if (vc) openVoiceCall(vc.dataset.vcall).catch(showError);
+    const cl = e.target.closest("tr[data-client]"); if (cl) openClient(cl.dataset.client).catch(showError);
     const sr = e.target.closest("button[data-speech]"); if (sr) openSpeechRun(sr.dataset.speech).catch(showError);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const q = e.target.closest && e.target.closest("tr[data-q]"); if (q) openQuestion(q.dataset.q).catch(showError);
     const vc = e.target.closest && e.target.closest("tr[data-vcall]"); if (vc) openVoiceCall(vc.dataset.vcall).catch(showError);
+    const cl = e.target.closest && e.target.closest("tr[data-client]"); if (cl) openClient(cl.dataset.client).catch(showError);
   });
   let resizeT;
   window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => go(state.page), 200); });

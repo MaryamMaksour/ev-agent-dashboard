@@ -14,6 +14,7 @@ Older call records (before the agent recorded these fields) still load; missing 
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -107,6 +108,15 @@ def parse_call(raw: dict, call_id: str) -> dict:
     errors = _errors(raw)
     post_llm = raw.get("post_call_llm") or {}
     llm_requests = metrics.get("llm_requests") if isinstance(metrics.get("llm_requests"), dict) else {}
+    actions = raw.get("actions") or []
+    fallback = raw.get("fallback") or None
+    # a callback with a time: booked by the agent during the call, or by the LLM-failure fallback
+    callback_at = None
+    for a in actions:
+        if isinstance(a, dict) and a.get("action") == "schedule_callback" and a.get("when"):
+            callback_at = m.parse_ts(a["when"]) or callback_at
+    if fallback and fallback.get("callback_at"):
+        callback_at = m.parse_ts(fallback["callback_at"]) or callback_at
     return {
         "id": call_id, "lead_id": raw.get("lead_id", "?"), "room": raw.get("room", ""),
         "ts": started, "ended_at": ended,
@@ -145,10 +155,18 @@ def parse_call(raw: dict, call_id: str) -> dict:
         "error": raw.get("error"), "metrics": metrics,
         # from events.jsonl (call_started), filled in by VoiceCallSource.call()
         "lead_name": None, "lead_status_before": None,
+        "fallback": fallback,
+        "callback_at": callback_at,
+        # the post-call check heard a callback request; the agreed time is in the caller's words (admins only)
+        "callback_requested": bool(callback_at or extraction.get("callback_requested") or cls == "callback"),
+        "callback_text": extraction.get("callback_time_text"),
+        "do_not_call": cls == "do_not_call" or any(isinstance(a, dict) and a.get("action") == "mark_do_not_call"
+                                                   for a in actions),
     }
 
 
-TEXT_FIELDS = ("transcript", "tool_calls", "actions", "summary", "filled_after_call", "disagreements", "lead_name")
+TEXT_FIELDS = ("transcript", "tool_calls", "actions", "summary", "filled_after_call", "disagreements", "lead_name",
+               "callback_text")
 
 
 def llm_rows(lines: list, *, show_text: bool) -> list:
@@ -195,6 +213,7 @@ def public_call(c: dict, *, full: bool, show_text: bool) -> dict:
     hidden = {"ts", "ended_at", "metrics", "turns", "errors", "llm_log", "crm_log", *TEXT_FIELDS}
     out = {k: v for k, v in c.items() if k not in hidden}
     out["ts"], out["ended_at"] = m.iso(c["ts"]), m.iso(c["ended_at"])
+    out["callback_at"] = m.iso(c.get("callback_at"))
     out["tool_call_count"] = c.get("tool_call_count", len(c["tool_calls"] or []))
     if c["transfer"] and not show_text:
         out["transfer"] = {k: v for k, v in c["transfer"].items() if k != "reason"}
@@ -236,6 +255,7 @@ class VoiceCallSource:
         self._listed: Optional[tuple] = None  # (monotonic expiry, [calls, newest first])
         self._memo: dict = {}     # (what, args) -> (the call list it was worked out from, result)
         self._lock = threading.Lock()
+        self._names: dict = {}    # call id -> (lead name, status before the call) from events.jsonl
 
     def _read_dir(self, folder: str) -> list:
         out = []
@@ -260,35 +280,43 @@ class VoiceCallSource:
 
     def _all_calls(self) -> list:
         """Every finished call, newest first. A file is parsed once and again only when it changes;
-        the folder itself is listed at most every `cache_seconds` (one page asks several times)."""
+        the folder itself is listed at most every `cache_seconds` (one page asks several times).
+        When nothing changed, the same list object comes back, so summaries worked out from it are reused."""
         with self._lock:
             if self._listed and self._listed[0] > time.monotonic():
                 return self._listed[1]
-            out, seen = [], set()
+            seen: dict = {}
+            changed = False
             try:
-                names = os.listdir(self.calls_dir) if os.path.isdir(self.calls_dir) else []
+                entries = os.scandir(self.calls_dir) if os.path.isdir(self.calls_dir) else []
             except OSError:
-                names = []
-            for name in names:
-                if not name.endswith(".json") or name.endswith(RAW_SUFFIX):
-                    continue
-                path = os.path.join(self.calls_dir, name)
-                try:
-                    st = os.stat(path)
-                except OSError:
-                    continue
-                seen.add(path)
-                key = (st.st_mtime_ns, st.st_size)
-                hit = self._parsed.get(path)
-                if not hit or hit[0] != key:
-                    raw = _load(path)
-                    hit = (key, slim(parse_call(raw, name[:-5])) if raw else None)
-                    self._parsed[path] = hit
-                if hit[1] is not None and hit[1]["ts"]:
-                    out.append(hit[1])
-            for gone in set(self._parsed) - seen:  # files that disappeared
-                del self._parsed[gone]
-            out.sort(key=lambda c: c["ts"], reverse=True)
+                entries = []
+            with entries if hasattr(entries, "close") else contextlib.nullcontext():
+                for entry in entries:
+                    name = entry.name
+                    if not name.endswith(".json") or name.endswith(RAW_SUFFIX):
+                        continue
+                    try:
+                        st = entry.stat()  # free on Windows: it comes with the folder listing
+                    except OSError:
+                        continue
+                    key = (st.st_mtime_ns, st.st_size)
+                    hit = self._parsed.get(entry.path)
+                    if not hit or hit[0] != key:
+                        raw = _load(entry.path)
+                        hit = (key, slim(parse_call(raw, name[:-5])) if raw else None)
+                        self._parsed[entry.path] = hit
+                        changed = True
+                    seen[entry.path] = hit
+            if len(seen) != len(self._parsed):  # files that disappeared
+                self._parsed = seen
+                changed = True
+            previous = self._listed[1] if self._listed else None
+            if changed or previous is None:
+                out = [hit[1] for hit in seen.values() if hit[1] is not None and hit[1]["ts"]]
+                out.sort(key=lambda c: c["ts"], reverse=True)
+            else:
+                out = previous
             self._listed = (time.monotonic() + self.cache_seconds, out)
             return out
 
@@ -326,6 +354,82 @@ class VoiceCallSource:
         c["lead_name"] = started.get("lead_name")
         c["lead_status_before"] = started.get("lead_status")
         return c
+
+    def lead_start(self, call_id: str) -> tuple:
+        """(lead name, lead status before the call) from the call's events.jsonl, cached."""
+        if call_id not in self._names:
+            folder = os.path.join(self.calls_dir, call_id)
+            started = next((e for e in _read_jsonl(os.path.join(folder, "events.jsonl"), limit=20)
+                            if e.get("event") == "call_started"), {})
+            self._names[call_id] = (started.get("lead_name"), started.get("lead_status"))
+        return self._names[call_id]
+
+    # ---------- calls grouped by client ----------
+    def clients(self, days: Optional[int], *, q: str = "", min_calls: int = 0, sort: str = "calls",
+                offset: int = 0, limit: int = 50, show_names: bool = False, now=None) -> dict:
+        """One row per client (lead) with a call in the period. Attempts today / in 7 days count every
+        phone call, whatever the period, so they match the agent's calling limits."""
+        rows = self._remember("clients", (days,), now, lambda: self._client_rows(days, now))
+        q = q.strip().lower()
+        if q:
+            rows = [r for r in rows if q in r["lead_id"].lower()
+                    or (show_names and q in (self.lead_start(r["last_call_id"])[0] or "").lower())]
+        if min_calls:
+            rows = [r for r in rows if r["calls"] >= min_calls]
+        keys = {"calls": lambda r: (-r["calls"], r["last_ts"] and -r["last_ts"].timestamp()),
+                "last": lambda r: -r["last_ts"].timestamp(),
+                "today": lambda r: (-r["attempts_today"], -r["last_ts"].timestamp())}
+        rows = sorted(rows, key=keys.get(sort, keys["calls"]))
+        page = rows[offset:offset + limit]
+        items = []
+        for r in page:
+            item = {k: (m.iso(v) if k in ("first_ts", "last_ts", "callback_at") else v) for k, v in r.items()}
+            item["name"] = self.lead_start(r["last_call_id"])[0] if show_names else None
+            items.append(item)
+        return {"total": len(rows), "items": items, "offset": offset, "limit": limit}
+
+    def _client_rows(self, days: Optional[int], now=None) -> list:
+        now = now or datetime.now(timezone.utc)
+        today = now.astimezone(self.tz).date()
+        everything: dict = defaultdict(list)
+        for c in self._all_calls():
+            everything[c["lead_id"]].append(c)
+        in_range = {c["lead_id"] for c in self.calls(days, now)}
+        start = m.since(days, now)
+        rows = []
+        for lead_id in in_range:
+            all_calls = everything[lead_id]                       # newest first
+            cs = [c for c in all_calls if not start or c["ts"] >= start]
+            last = cs[0]
+            phone = [c for c in all_calls if c["line"]]
+            numbers = [c["line"].get("number") for c in phone if c["line"].get("number")]
+            callback = next((c["callback_at"] for c in all_calls if c["callback_at"]), None)
+            rows.append({
+                "lead_id": lead_id, "number": numbers[0] if numbers else None,
+                "calls": len(cs), "reached": sum(1 for c in cs if c["line_result"] in ("answered", "browser")),
+                "phone_calls": sum(1 for c in cs if c["line"]),
+                "first_ts": cs[-1]["ts"], "last_ts": last["ts"], "last_call_id": last["id"],
+                "last_label": last["classification_label"], "last_ended": last["ended_by_label"],
+                "last_line": last["line_label"],
+                "attempts_today": sum(1 for c in phone if c["ts"].astimezone(self.tz).date() == today),
+                "attempts_7d": sum(1 for c in phone if now - timedelta(days=7) < c["ts"] <= now),
+                "callback_at": callback,
+                "callback_requested": any(c["callback_requested"] for c in cs),
+                "do_not_call": any(c["do_not_call"] for c in all_calls),
+                "transferred": any(c["transferred"] for c in cs),
+                "errors": sum(c["error_count"] for c in cs),
+            })
+        return rows
+
+    def client_calls(self, lead_id: str, *, show_names: bool = False) -> Optional[dict]:
+        """Every call with this client, newest first (numbers only; open a call for the rest)."""
+        if not lead_id or not _SAFE.match(lead_id):
+            return None
+        cs = [c for c in self._all_calls() if c["lead_id"] == lead_id]
+        if not cs:
+            return None
+        name, _ = self.lead_start(cs[0]["id"]) if show_names else (None, None)
+        return {"lead_id": lead_id, "name": name, "calls": [public_call(c, full=False, show_text=False) for c in cs]}
 
     def processing(self) -> int:
         """Calls whose post-call work hasn't finished: a raw file with no final record next to it."""
