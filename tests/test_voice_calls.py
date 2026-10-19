@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 import unittest
 from datetime import timedelta, timezone
 
@@ -62,6 +63,30 @@ class VoiceCallTests(unittest.TestCase):
             self.assertIsNone(self.src.call(bad))
             self.assertIsNone(self.src.speech_run(bad, show_text=True))
 
+    def test_hours(self):
+        h = self.src.hours(None)
+        self.assertEqual(len(h["hours"]), 24)
+        self.assertEqual(sum(r["calls"] for r in h["hours"]), 3)
+        self.assertEqual(h["days"], [{"date": "2026-10-16", "calls": 2}, {"date": "2026-10-15", "calls": 1}])
+        r13 = h["hours"][13]
+        self.assertEqual((r13["calls"], r13["bottleneck"], r13["tokens"]), (1, "llm_ttft", 4576))
+        self.assertEqual(r13["stages"]["llm_ttft"], 0.71)
+        self.assertEqual(h["slow_reasons"][0]["label"], "LLM first word")
+        self.assertEqual(self.src.hours(None, "2026-10-16")["calls"], 2)
+        self.assertEqual(self.src.hours(None, "2020-01-01")["calls"], 0)
+
+    def test_calls_at_the_same_time(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "calls"))
+            for i, (start, end) in enumerate([("10:00", "10:05"), ("10:02", "10:04"), ("10:03", "10:10"), ("11:00", "11:01")]):
+                with open(os.path.join(d, "calls", f"c{i}.json"), "w", encoding="utf-8") as f:
+                    json.dump({"lead_id": f"L{i}", "started_at": f"2026-10-16T{start}:00+04:00",
+                               "ended_at": f"2026-10-16T{end}:00+04:00"}, f)
+            h = VoiceCallSource(d, UAE).hours(None)
+            self.assertEqual((h["hours"][10]["calls"], h["hours"][10]["at_once"]), (3, 3))
+            self.assertEqual((h["hours"][11]["at_once"], h["max_at_once"]), (1, 3))
+            self.assertEqual(h["peak"], {"hour": 10, "calls": 3})
+
     def test_missing_folder(self):
         src = VoiceCallSource("/nonexistent", UAE)
         self.assertEqual(src.summary(30)["totals"]["calls"], 0)
@@ -110,6 +135,7 @@ class VoiceCallV2Tests(unittest.TestCase):
         crm = full["crm_changes"]
         self.assertEqual([x["source"] for x in crm], ["call", "post_call", "post_call"])
         self.assertEqual(crm[0]["changed"]["budget"], {"before": None, "after": 2000000})
+        self.assertEqual((full["lead_name"], full["lead_status_before"]), ("Omar Test", "new"))
 
     def test_viewer_gets_no_text_from_new_fields(self):
         v = public_call(self.src.call(V2_CALL), full=True, show_text=False)
@@ -121,8 +147,10 @@ class VoiceCallV2Tests(unittest.TestCase):
         for x in v["crm_changes"]:
             self.assertNotIn("changed", x)                       # field names only, no values
         self.assertEqual(v["crm_changes"][0]["fields"], ["budget", "property_type"])
+        self.assertIsNone(v["lead_name"])                        # the lead's name: admins only
+        self.assertEqual(v["lead_status_before"], "new")
         dumped = json.dumps(v)
-        for secret in ("SECRET PROMPT TEXT", "Is this Omar", "Dubai Hills", "2 million"):
+        for secret in ("SECRET PROMPT TEXT", "Is this Omar", "Omar Test", "Dubai Hills", "2 million"):
             self.assertNotIn(secret.lower(), dumped.lower())
 
 

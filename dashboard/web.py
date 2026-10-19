@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from http import cookies
@@ -22,6 +23,7 @@ from .whatsapp import OUTCOMES, WhatsAppSource
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 STATIC_FILES = {"app.css", "app.js", "login.css", "login.js"}
 COOKIE = "evdash"
+_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 RANGES = {"7": 7, "30": 30, "90": 90, "all": None}
 
 SECURITY_HEADERS = {
@@ -182,9 +184,15 @@ def make_handler(app: App):
                 wa = app.whatsapp.summary(days)
                 vo = app.voice.summary(days)
                 return self.json(200, {"range": qs.get("range", "30"), "whatsapp": wa, "voice": vo,
-                                       "voice_calls": app.voice_calls.status()})
+                                       "voice_calls": app.voice_calls.status(),
+                                       "voice_calls_per_day": app.voice_calls.per_day(days)})
             if path == "/api/voicecalls/summary":
                 return self.json(200, app.voice_calls.summary(days))
+            if path == "/api/voicecalls/hours":
+                day = qs.get("day", "")
+                if day and not _DAY.match(day):
+                    return self.json(400, {"error": "day must look like 2026-10-19."})
+                return self.json(200, app.voice_calls.hours(days, day or None))
             if path == "/api/voicecalls/call":
                 call = app.voice_calls.call(qs.get("id", ""))
                 if not call:

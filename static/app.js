@@ -25,7 +25,7 @@
     return Math.round(s / 86400) + " days ago";
   };
 
-  const state = { me: null, page: "overview", range: "30", data: {}, wa: { outcome: "", flag: "", q: "", offset: 0 }, tab: {} };
+  const state = { me: null, page: "overview", range: "30", data: {}, wa: { outcome: "", flag: "", q: "", offset: 0 }, tab: {}, hrDay: "" };
 
   async function api(path) {
     const r = await fetch(path, { credentials: "same-origin", headers: { Accept: "application/json" } });
@@ -83,7 +83,40 @@
     });
     el.innerHTML = s + "</svg>";
     $$("rect[data-i]", el).forEach((r) => {
-      r.addEventListener("mousemove", (e) => { const d = series[+r.dataset.i]; showTip(`<b>${esc(d.weekday)} ${esc(d.label)}</b><div class="row"><span>${esc(opts.name)}</span><span>${esc(opts.fmt ? opts.fmt(d.value) : num(d.value))}</span></div>`, e); });
+      r.addEventListener("mousemove", (e) => { const d = series[+r.dataset.i]; showTip(opts.tip ? opts.tip(d) : `<b>${esc(d.weekday)} ${esc(d.label)}</b><div class="row"><span>${esc(opts.name)}</span><span>${esc(opts.fmt ? opts.fmt(d.value) : num(d.value))}</span></div>`, e); });
+      r.addEventListener("mouseleave", hideTip);
+      if (opts.onClick) { r.style.cursor = "pointer"; r.addEventListener("click", () => { hideTip(); opts.onClick(series[+r.dataset.i]); }); }
+    });
+  }
+  function stackBars(el, series, parts, opts) {
+    const total = (d) => parts.reduce((a, p) => a + (d.values[p.k] || 0), 0);
+    if (!series.some((d) => total(d) > 0)) { el.innerHTML = `<div class="empty">${esc(opts.empty || "Nothing in this period.")}</div>`; return; }
+    const W = el.clientWidth || 600, H = 220, m = { t: 10, r: 6, b: 24, l: 44 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const ax = axis(Math.max(...series.map(total))), max = ax.max;
+    const bw = iw / series.length, gap = Math.min(Math.max(1, bw * 0.28), 8);
+    const y = (v) => m.t + ih - (v / max) * ih;
+    const every = Math.max(1, Math.ceil(36 / bw));
+    const dec = ax.step < 1 ? (ax.step % 0.5 ? 2 : 1) : 0;
+    let s = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${esc(opts.label)}">`;
+    for (let v = 0; v <= max + 1e-9; v += ax.step) {
+      const yy = y(v);
+      s += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}"/><text x="${m.l - 6}" y="${yy + 4}" text-anchor="end">${esc(num(v, dec))}</text>`;
+    }
+    series.forEach((d, i) => {
+      const x = m.l + i * bw + gap / 2, w = Math.max(1, bw - gap);
+      let acc = 0;
+      parts.forEach((p) => {
+        const v = d.values[p.k] || 0; if (!v) return;
+        s += `<rect x="${x}" y="${y(acc + v)}" width="${w}" height="${Math.max(0, y(acc) - y(acc + v) - 1)}" fill="${css(p.color)}" rx="1.5"/>`;
+        acc += v;
+      });
+      s += `<rect x="${m.l + i * bw}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent" data-i="${i}"/>`;
+      if (i % every === 0) s += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${esc(d.label)}</text>`;
+    });
+    el.innerHTML = s + "</svg>" + `<div class="legend">${parts.map((p) => `<span><span class="sw" style="background:var(${p.color})"></span>${esc(p.name)}</span>`).join("")}</div>`;
+    $$("rect[data-i]", el).forEach((r) => {
+      r.addEventListener("mousemove", (e) => showTip(opts.tip(series[+r.dataset.i]), e));
       r.addEventListener("mouseleave", hideTip);
     });
   }
@@ -92,8 +125,8 @@
     const max = opts.max || Math.max(1, ...items.map((i) => i.v));
     el.innerHTML = items.map((it) => `<div class="bar-row"><span class="name" title="${esc(it.l)}">${esc(it.l)}</span><div class="bar-track"><div class="bar-fill" style="width:${(it.v / max) * 100}%;background:var(${it.c || opts.c || "--s1"})"></div></div><span class="v">${esc(it.t != null ? it.t : num(it.v))}</span></div>`).join("");
   }
-  function heatmap(hm, label) {
-    const el = $("#heat");
+  function heatmap(hm, label, ids = { el: "#heat", sw: "#rampSw", hint: "#heatHint" }) {
+    const el = $(ids.el);
     const steps = ["--h0", "--h1", "--h2", "--h3", "--h4", "--h5", "--h6"];
     const max = Math.max(0, ...hm.grid.flat());
     let s = `<span></span>` + Array.from({ length: 24 }, (_, h) => `<span class="cl">${h % 3 === 0 ? h : ""}</span>`).join("");
@@ -109,8 +142,8 @@
       c.addEventListener("mousemove", (e) => showTip(`<b>${esc(c.dataset.d)} ${esc(c.dataset.h)}:00–${esc(c.dataset.h)}:59</b><div class="row"><span>${esc(label)}</span><span>${esc(c.dataset.v)}</span></div>`, e));
       c.addEventListener("mouseleave", hideTip);
     });
-    $("#rampSw").innerHTML = steps.slice(1).map((v) => `<span class="sw" style="background:var(${v})"></span>`).join(" ");
-    $("#heatHint").textContent = max ? `${label} by weekday and hour (UAE time). Busiest: ${hm.peak.weekday} ${hm.peak.hour}:00 with ${hm.peak.count}.` : "Nothing in this period.";
+    $(ids.sw).innerHTML = steps.slice(1).map((v) => `<span class="sw" style="background:var(${v})"></span>`).join(" ");
+    $(ids.hint).textContent = max ? `${label} by weekday and hour (UAE time). Busiest: ${hm.peak.weekday} ${hm.peak.hour}:00 with ${hm.peak.count}.` : "Nothing in this period.";
   }
   const kpi = (lab, val, delta) => `<div class="kpi"><span class="lab">${esc(lab)}</span><span class="val">${val}</span><span class="delta">${delta || ""}</span></div>`;
 
@@ -139,6 +172,8 @@
     ].join("");
     dayBars($("#ovWaDay"), wa.per_day, { name: "Questions", label: "WhatsApp questions per day" });
     dayBars($("#ovWaCost"), wa.cost_per_day, { name: "Cost", label: "WhatsApp cost per day", fmt: (v) => aed(v) });
+    dayBars($("#ovVcDay"), d.voice_calls_per_day, { name: "Calls", label: "Voice agent calls per day", color: "--s2", empty: "No voice agent calls in this period.",
+      onClick: (day) => { if (!day.value) return; state.hrDay = day.date; state.tab.calls = "busy"; go("calls"); } });
     drawHeat();
   }
   function drawHeat() {
@@ -245,59 +280,161 @@
     $("#vcSpeech").innerHTML = `<div class="list">${runCard(sp.recordings, "Real recordings (speech-to-text)")}${runCard(sp.round_trip, "Round trip (text-to-speech → speech-to-text)")}</div><div class="note">Targets: accuracy ≥ 90%, key terms (names, areas, amounts) ≥ 95%. Real recordings are the result to trust.</div>`;
     $("#vcModels").innerHTML = d.by_model.map((x) => `<tr><td class="num">${esc(x.model)}</td><td>${x.served_by ? `<span class="pill ${x.served_by === "vllm" ? "good" : "warn"}">${esc(x.served_by)}</span>` : '<span class="muted">–</span>'}</td><td class="r num">${x.calls}</td><td class="r num">${secs(x.ttft_median)}</td><td class="r num">${secs(x.e2e_median)}</td><td class="r num">${num(x.tokens_per_call)}</td><td class="r num">${x.qualified}</td><td class="r num">${x.calls_with_errors}</td></tr>`).join("") || `<tr><td colspan="8" class="empty">No answered calls.</td></tr>`;
     const lineCls = { answered: "good", busy: "warn", no_answer: "serious", browser: "" };
+    await renderHours();
     $("#vcRows").innerHTML = d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.lead_id)}</td><td><span class="pill ${lineCls[c.line_result] ?? "crit"}">${esc(c.line_label)}</span></td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="r num">${secs(c.ttft_median)}</td><td class="r num">${c.tokens_total ? num(c.tokens_total) : "–"}</td><td>${c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : '<span class="muted">–</span>'}</td><td>${c.recorded ? '<span class="pill good">Yes</span>' : c.recording ? '<span class="pill crit">Failed</span>' : '<span class="muted">–</span>'}</td><td>${c.transfer_asked ? `<span class="pill ${c.transferred ? "good" : "warn"}">${c.transferred ? "Transferred" : "Asked"}</span>` : '<span class="muted">–</span>'}</td></tr>`).join("") || `<tr><td colspan="11" class="empty">No calls in this period.</td></tr>`;
   }
+  // tabs inside the drawer: [{ id, label, html }]; the first one opens
+  function drawerTabs(tabs) {
+    return `<div class="seg subtabs dtabs" role="tablist" aria-label="Call details">${tabs.map((t, i) => `<button role="tab" data-dtab="${t.id}" aria-selected="${i === 0}" tabindex="${i ? -1 : 0}">${t.label}</button>`).join("")}</div>` +
+      tabs.map((t, i) => `<div class="panel" data-dpanel="${t.id}" ${i ? "hidden" : ""}>${t.html}</div>`).join("");
+  }
+  function showDrawerTab(b) {
+    $$("#dBody [data-dtab]").forEach((x) => { const on = x === b; x.setAttribute("aria-selected", String(on)); x.tabIndex = on ? 0 : -1; });
+    $$("#dBody [data-dpanel]").forEach((p) => (p.hidden = p.dataset.dpanel !== b.dataset.dtab));
+  }
+  $("#dBody").addEventListener("click", (e) => { const b = e.target.closest("button[data-dtab]"); if (b) showDrawerTab(b); });
+  $("#dBody").addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const tabs = $$("#dBody [data-dtab]"); const i = tabs.indexOf(document.activeElement); if (i < 0) return;
+    const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; next.focus(); showDrawerTab(next);
+  });
+
+  const LEAD_FIELDS = { status: "Status", interest_level: "Interest", budget: "Budget", preferred_area: "Area", property_type: "Property type", timeline: "Timeline", callback_at: "Callback" };
+  const human = (v) => (v == null || v === "" ? "–" : String(v).replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()));
+  const leadValue = (k, v) => (v == null || v === "" ? "–" : k === "budget" && !isNaN(v) ? num(v) : k === "callback_at" ? when(v) : human(v));
+
+  // ---------- busy hours and bottlenecks ----------
+  const hourLabel = (h) => `${String(h).padStart(2, "0")}:00`;
+  const STAGE_PARTS = [{ k: "eou", name: "Speech-to-text", color: "--h3" }, { k: "llm_ttft", name: "LLM first token", color: "--s2" }, { k: "tts_ttfb", name: "Text-to-speech", color: "--h6" }];
+  async function renderHours() {
+    const d = await api(`/api/voicecalls/hours?range=${state.range}${state.hrDay ? `&day=${encodeURIComponent(state.hrDay)}` : ""}`);
+    const sel = $("#hrDay");
+    const days = d.days.slice();
+    if (state.hrDay && !days.some((x) => x.date === state.hrDay)) days.unshift({ date: state.hrDay, calls: d.calls });
+    const dayName = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+    sel.innerHTML = `<option value="">All days in this period</option>` + days.map((x) => `<option value="${esc(x.date)}" ${x.date === state.hrDay ? "selected" : ""}>${esc(dayName(x.date))} · ${num(x.calls)} calls</option>`).join("");
+    const H = d.hours;
+    const tipFor = (r) => `<b>${hourLabel(r.hour)}–${String(r.hour).padStart(2, "0")}:59</b>` +
+      [["Calls", num(r.calls)], ["At the same time (most)", num(r.at_once)], ["Caller waits: typical", secs(r.wait_median)], ["Caller waits: slowest 5%", secs(r.wait_p95)],
+       ...STAGE_PARTS.map((p) => [p.name, secs(r.stages[p.k])]), ["Slow turns", num(r.slow_turns)], ["Tokens", num(r.tokens)], ["Typical call length", dur(r.duration_median)]]
+        .map(([k, v]) => `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
+    const series = (f) => H.map((r) => ({ label: String(r.hour), weekday: "", date: r.hour, value: f(r) || 0, r }));
+    const opt = (name, label, color) => ({ name, label, color, tip: (x) => tipFor(x.r), empty: "No calls." });
+    dayBars($("#hrCalls"), series((r) => r.calls), opt("Calls", "Calls per hour", "--s2"));
+    dayBars($("#hrAtOnce"), series((r) => r.at_once), opt("At the same time", "Most calls at the same time, per hour", "--serious"));
+    dayBars($("#hrTokens"), series((r) => r.tokens), opt("Tokens", "Tokens per hour", "--s1"));
+    dayBars($("#hrLength"), series((r) => r.duration_median), opt("Typical call length", "Typical call length per hour", "--h4"));
+    stackBars($("#hrStages"), H.map((r) => ({ label: String(r.hour), values: r.stages, r })), STAGE_PARTS,
+      { label: "Where the caller's wait goes, per hour", tip: (x) => tipFor(x.r), empty: "No turn timings recorded for these calls." });
+
+    // the bottleneck, in words
+    const lines = [];
+    const top = d.slow_reasons[0];
+    if (top) lines.push(`<div class="li"><div>Main bottleneck<small>What made most slow turns slow (caller waited ${d.slow_turn_seconds} s or more)</small></div><span class="pill crit">${esc(top.label)} · ${pct(top.share)}</span></div>`);
+    else lines.push(`<div class="li"><div>Main bottleneck<small>No turn took ${d.slow_turn_seconds} s or more</small></div><span class="pill good">None</span></div>`);
+    const worst = H.filter((r) => r.wait_median != null).sort((a, b) => b.wait_median - a.wait_median)[0];
+    if (worst) lines.push(`<div class="li"><div>Slowest hour<small>Typical wait then, and its biggest part: ${esc(d.stage_labels[worst.bottleneck] || "–")}</small></div><span class="pill warn">${hourLabel(worst.hour)} · ${secs(worst.wait_median)}</span></div>`);
+    if (d.peak) lines.push(`<div class="li"><div>Rush hour<small>Most calls started in this hour</small></div><span class="pill">${hourLabel(d.peak.hour)} · ${num(d.peak.calls)} calls</span></div>`);
+    lines.push(`<div class="li"><div>Most calls at the same time<small>The servers have to handle these together</small></div><span class="pill">${num(d.max_at_once)}</span></div>`);
+    if (d.load) {
+      const worse = d.load.busy_wait_median - d.load.quiet_wait_median;
+      lines.push(`<div class="li"><div>Does it slow down when busy?<small>Typical wait in the busiest hours (${d.load.busy_hours.map(hourLabel).join(", ")}) vs the other hours</small></div><span class="pill ${worse > 0.3 ? "crit" : "good"}">${secs(d.load.busy_wait_median)} vs ${secs(d.load.quiet_wait_median)}</span></div>`);
+    }
+    $("#hrBottleneck").innerHTML = `<div class="list">${lines.join("")}</div>`;
+    $("#hrSub").textContent = state.hrDay ? `${dayName(state.hrDay)} · ${num(d.calls)} calls · UAE time` : `${num(d.calls)} calls in this period · UAE time`;
+    heatmap(d.heatmap, "Voice agent calls", { el: "#vcHeat", sw: "#vcRampSw", hint: "#vcHeatHint" });
+  }
+
   async function openVoiceCall(id) {
     const c = await api(`/api/voicecalls/call?id=${encodeURIComponent(id)}`);
     const admin = state.me.role === "admin";
     const box = (k, v) => `<div><span>${esc(k)}</span><b>${v}</b></div>`;
-    $("#dTitle").textContent = `${c.lead_id} · ${c.classification_label}`;
+    const row = (k, v) => `<div class="li"><div>${esc(k)}</div><span>${v}</span></div>`;
+    const adminOnly = (what) => `<div class="note">${esc(what)} visible to admins only.</div>`;
+    $("#dTitle").textContent = admin && c.lead_name ? `${c.lead_name} · ${c.classification_label}` : `${c.lead_id} · ${c.classification_label}`;
     $("#dMeta").innerHTML = [when(c.ts), c.room, c.models.llm && `${c.models.llm}${c.served_by ? ` on ${c.served_by}` : ""}`, c.models.stt, c.models.tts].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
-    let b = `<div class="d-sum">` + [
-      box("Phone line", esc(c.line_label)), box("Ended", esc(c.ended_by_label)), box("Call length", dur(c.duration_seconds)),
-      box("Tokens", !c.tokens_total ? "–" : `${num(c.tokens_in)} in · ${num(c.tokens_out)} out`),
-      box("First token: shortest", secs(c.ttft_min)), box("First token: typical", secs(c.ttft_median)),
-      box("First token: longest", secs(c.ttft_max)), box("Caller waits: typical", secs(c.e2e_median)),
+
+    // what the CRM says about the lead after this call: the CRM log first, then older records' actions
+    const crm = c.crm_changes || [];
+    const saved = crm.filter((x) => x.ok), failed = crm.filter((x) => !x.ok);
+    const after = {}, before = {};
+    saved.forEach((x) => Object.entries(x.changed || {}).forEach(([k, v]) => { if (!(k in before)) before[k] = v.before; after[k] = v.after; }));
+    if (!crm.length) (c.actions || []).forEach((a) => Object.entries(a).forEach(([k, v]) => { if (k !== "action") after[k] = v; }));
+    Object.entries(c.filled_after_call || {}).forEach(([k, v]) => { if (!(k in after)) after[k] = v; });
+    const fields = new Set(saved.flatMap((x) => x.fields || []));
+    const crmLabel = failed.length ? `<span class="pill crit">Failed · ${failed.length}</span>`
+      : fields.size ? `<span class="pill good">Updated · ${fields.size} field${fields.size > 1 ? "s" : ""}</span>`
+      : Object.keys(after).length ? '<span class="pill good">Updated</span>' : '<span class="pill">No changes</span>';
+    const statusBefore = c.lead_status_before ?? before.status;
+    const statusAfter = after.status ?? statusBefore;
+
+    // ---- Overview ----
+    let ov = `<div class="d-sum">` + [
+      box("Label", esc(c.classification_label)), box("CRM", crmLabel), box("Phone line", esc(c.line_label)), box("Call length", dur(c.duration_seconds)),
     ].join("") + `</div>`;
-    if (c.line) b += `<div class="note"><b>Phone line:</b> ${esc(c.line.label || c.line_label)} · SIP ${esc(c.line.sip_status_code ?? "–")} ${esc(c.line.sip_status || "")} · rang ${secs(c.line.ring_seconds)} · ${esc(c.line.number || "")}</div>`;
-    if (c.recording) b += `<div class="note"><b>Recording:</b> ${c.recording.ok ? `${esc(c.recording.file)} (${esc(c.recording.storage || "")})` : `not recorded: ${esc(c.recording.error || "")}`}</div>`;
-    if (c.transfer) b += `<div class="note"><b>Asked for a person:</b> ${c.transfer.ok ? `transferred to ${esc(c.transfer.to)}` : `not transferred (${esc(c.transfer.error || "")})`}${c.transfer.reason ? ` · reason: ${esc(c.transfer.reason)}` : ""}</div>`;
-    if ((c.errors || []).length) {
-      b += `<div class="block"><h4>Errors (${c.errors.length})</h4><div class="tx">${c.errors.map((e) => `<div class="line tool bad">✗ <b>${esc(e.stage_label || e.stage)}</b> <span class="muted">· ${esc((e.at || "").slice(11, 19))}${e.recoverable === true ? " · recovered" : ""}</span>${e.error ? `<br>${esc(e.error)}` : ""}</div>`).join("")}</div>${admin ? "" : '<div class="muted">Error messages are visible to admins only.</div>'}</div>`;
-    }
-    if (c.post_call_llm) {
-      const p = c.post_call_llm;
-      b += `<div class="note"><b>Post-call check:</b> ${p.ok ? "done" : "failed"} in ${secs(p.seconds)} · ${num(p.prompt_tokens)} tokens in · ${num(p.completion_tokens)} out${p.requests > 1 ? ` · ${p.requests} tries (the first answer wasn't valid)` : ""}</div>`;
-    }
-    if (c.turns && c.turns.length) {
-      b += `<div class="block"><h4>Every turn</h4><div class="tbl-wrap"><table><thead><tr><th>#</th><th class="r">Caller waits</th><th class="r">STT</th><th class="r">First token</th><th class="r">TTS</th><th class="r">Tokens in / out</th><th class="r">Tok/s</th><th>Slowest</th></tr></thead><tbody>` +
-        c.turns.map((t) => `<tr><td class="num">${t.turn}</td><td class="r num">${secs(t.end_to_end)}</td><td class="r num">${secs(t.eou)}</td><td class="r num">${secs(t.llm_ttft)}${t.llm_calls > 1 ? ` <span class="muted">×${t.llm_calls}</span>` : ""}</td><td class="r num">${secs(t.tts_ttfb)}</td><td class="r num">${num(t.prompt_tokens)} / ${num(t.completion_tokens)}</td><td class="r num">${num(t.tokens_per_second, 1)}</td><td class="muted">${esc(t.slowest_stage || "–")}</td></tr>`).join("") + `</tbody></table></div></div>`;
-    } else {
-      b += `<div class="note">No per-turn timings in this record (made before the agent recorded them, or text mode without audio).</div>`;
-    }
-    if ((c.llm_requests || []).length) {
-      const stageName = { call: "During call", post_call: "Post-call" };
-      b += `<div class="block"><h4>Every LLM request (${c.llm_requests.length})</h4><div class="tbl-wrap"><table><thead><tr><th>When</th><th>#</th><th class="r">First token</th><th class="r">Total</th><th class="r">Tokens in (cached) / out</th><th>Tools called</th><th>Result</th></tr></thead><tbody>` +
-        c.llm_requests.map((r) => `<tr><td class="muted">${esc(stageName[r.stage] || r.stage)}</td><td class="num">${esc(r.n ?? "")}</td><td class="r num">${secs(r.ttft)}</td><td class="r num">${secs(r.seconds)}</td><td class="r num">${num(r.prompt_tokens)}${r.cached_tokens ? ` <span class="muted">(${num(r.cached_tokens)})</span>` : ""} / ${num(r.completion_tokens)}</td><td>${esc((r.tools_called || []).join(", ") || "–")}</td><td>${r.ok ? '<span class="pill good">OK</span>' : r.cancelled ? '<span class="pill warn">Interrupted</span>' : '<span class="pill crit">Failed</span>'}${r.reasoning_tokens ? ` <span class="pill warn">thought ${num(r.reasoning_tokens)}</span>` : ""}</td></tr>` +
-          (admin && (r.reply || r.error) ? `<tr><td></td><td colspan="6" class="muted">${esc(r.error || r.reply)}</td></tr>` : "")).join("") + `</tbody></table></div></div>`;
-    }
-    if ((c.crm_changes || []).length) {
-      b += `<div class="block"><h4>CRM changes (${c.crm_changes.length})</h4><div class="tbl-wrap"><table><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Fields</th><th>Result</th></tr></thead><tbody>` +
-        c.crm_changes.map((x) => `<tr><td class="num muted">${esc((x.ts || "").slice(11, 19))}</td><td>${x.source === "post_call" ? "Post-call check" : "Agent, during the call"}</td><td>${esc(x.action || "")}</td><td>${admin && x.changed ? Object.entries(x.changed).map(([k, v]) => `${esc(k)}: <span class="muted">${esc(v.before ?? "–")}</span> → <b>${esc(v.after ?? "–")}</b>`).join("<br>") : esc((x.fields || []).join(", ") || "–")}</td><td>${x.ok ? '<span class="pill good">Saved</span>' : `<span class="pill crit">Failed</span>${admin && x.error ? ` ${esc(x.error)}` : ""}`}</td></tr>`).join("") + `</tbody></table></div>${admin ? "" : '<div class="muted">The values before and after are visible to admins only.</div>'}</div>`;
-    }
-    if (Object.keys(c.versions || {}).length || Object.keys(c.settings || {}).length) {
-      b += `<div class="block"><h4>Version and settings</h4><div class="code">${esc(Object.entries({ ...c.versions, ...c.settings }).map(([k, v]) => `${k}: ${typeof v === "object" && v !== null ? JSON.stringify(v) : v}`).join("\n"))}</div></div>`;
-    }
-    if (admin && c.transcript) {
-      if (c.summary) b += `<div class="block"><h4>Summary for the sales team</h4><div class="text answer">${esc(c.summary)}</div></div>`;
-      b += `<div class="block"><h4>Tool calls</h4>${c.tool_calls.length ? `<div class="tx">${c.tool_calls.map((t) => `<div class="line tool ${t.is_error ? "bad" : ""}">${t.is_error ? "✗" : "✓"} ${esc(t.name)}(${esc(t.arguments || "")}) → ${esc(t.output || "")} <span class="muted">· ${esc((t.at || "").slice(11, 19))}</span></div>`).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>'}</div>`;
-      b += `<div class="block"><h4>Conversation</h4><div class="tx">${c.transcript.map((t) => `<div class="line ${t.role === "agent" ? "agent" : "lead"}"><small>${t.role === "agent" ? "Agent" : "Lead"}</small>${esc(t.text)}</div>`).join("") || '<div class="muted">No conversation.</div>'}</div></div>`;
-      if (Object.keys(c.filled_after_call || {}).length) b += `<div class="block"><h4>Filled in after the call</h4><div class="code">${esc(Object.entries(c.filled_after_call).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
-      if ((c.disagreements || []).length) b += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
-    } else {
-      b += `<div class="note">The conversation, tool calls and summary are visible to admins only.</div>`;
-    }
-    openDrawer(b);
+    ov += `<div class="block"><h4>Client</h4><div class="list">` +
+      (admin ? row("Name", esc(c.lead_name || "–")) : "") +
+      row("Lead ID", `<span class="num">${esc(c.lead_id)}</span>`) +
+      (c.line && c.line.number ? row("Phone", `<span class="num">${esc(c.line.number)}</span>`) : "") +
+      row("Status", statusBefore != null && statusAfter !== statusBefore ? `${esc(human(statusBefore))} → <b>${esc(human(statusAfter))}</b>` : esc(human(statusAfter))) +
+      (admin ? Object.keys(LEAD_FIELDS).filter((k) => k !== "status" && after[k] != null && after[k] !== "").map((k) => row(LEAD_FIELDS[k], esc(leadValue(k, after[k])))).join("") : "") +
+      `</div>${admin ? "" : adminOnly("The client's name and what they told the agent are")}</div>`;
+    ov += `<div class="block"><h4>How it went</h4><div class="list">` +
+      row("Ended", esc(c.ended_by_label)) +
+      row("Asked for a person", c.transfer ? (c.transfer.ok ? `Transferred to ${esc(c.transfer.to || "a person")}` : "Asked, not transferred") : "No") +
+      row("Recording", c.recording ? (c.recording.ok ? "Saved" : '<span class="pill crit">Failed</span>') : "–") +
+      row("Errors", c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : "None") +
+      `</div></div>`;
+    if (admin && c.summary) ov += `<div class="block"><h4>Summary for the sales team</h4><div class="text answer">${esc(c.summary)}</div></div>`;
+    else if (admin) ov += `<div class="note">No summary was saved for this call.</div>`;
+
+    // ---- Conversation ----
+    const conv = admin
+      ? `<div class="tx">${(c.transcript || []).map((t) => `<div class="line ${t.role === "agent" ? "agent" : "lead"}"><small>${t.role === "agent" ? "Agent" : "Client"}</small>${esc(t.text)}</div>`).join("") || '<div class="muted">No conversation.</div>'}</div>`
+      : adminOnly("The conversation is");
+
+    // ---- CRM ----
+    let crmHtml = crm.length
+      ? `<div class="tbl-wrap"><table><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Fields</th><th>Result</th></tr></thead><tbody>` +
+        crm.map((x) => `<tr><td class="num muted">${esc((x.ts || "").slice(11, 19))}</td><td>${x.source === "post_call" ? "Post-call check" : "Agent, during the call"}</td><td>${esc(x.action || "")}</td><td>${admin && x.changed ? Object.entries(x.changed).map(([k, v]) => `${esc(LEAD_FIELDS[k] || k)}: <span class="muted">${esc(v.before ?? "–")}</span> → <b>${esc(v.after ?? "–")}</b>`).join("<br>") : esc((x.fields || []).map((f) => LEAD_FIELDS[f] || f).join(", ") || "–")}</td><td>${x.ok ? '<span class="pill good">Saved</span>' : `<span class="pill crit">Failed</span>${admin && x.error ? ` ${esc(x.error)}` : ""}`}</td></tr>`).join("") + `</tbody></table></div>` + (admin ? "" : adminOnly("The values before and after are"))
+      : `<div class="note">No CRM changes were logged for this call.</div>`;
+    if (admin && Object.keys(c.filled_after_call || {}).length) crmHtml += `<div class="block"><h4>Filled in after the call</h4><div class="code">${esc(Object.entries(c.filled_after_call).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
+    if (admin && (c.disagreements || []).length) crmHtml += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
+
+    // ---- Tools ----
+    const tools = admin
+      ? ((c.tool_calls || []).length ? `<div class="tx">${c.tool_calls.map((t) => `<div class="line tool ${t.is_error ? "bad" : ""}">${t.is_error ? "✗" : "✓"} ${esc(t.name)}(${esc(t.arguments || "")}) → ${esc(t.output || "")} <span class="muted">· ${esc((t.at || "").slice(11, 19))}</span></div>`).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>')
+      : `<div class="note">${num(c.tool_call_count)} tool call(s). What they sent and got back is visible to admins only.</div>`;
+
+    // ---- Speed ----
+    let speed = `<div class="d-sum">` + [
+      box("Caller waits: typical", secs(c.e2e_median)), box("Caller waits: longest", secs(c.e2e_max)),
+      box("First token: typical", secs(c.ttft_median)), box("First token: longest", secs(c.ttft_max)),
+      box("Tokens in", num(c.tokens_in)), box("Tokens out", num(c.tokens_out)), box("Tokens / s", num(c.tokens_per_second, 1)), box("Interrupted", num(c.interruptions)),
+    ].join("") + `</div>`;
+    if (c.post_call_llm) { const p = c.post_call_llm; speed += `<div class="note"><b>Post-call check:</b> ${p.ok ? "done" : "failed"} in ${secs(p.seconds)} · ${num(p.prompt_tokens)} tokens in · ${num(p.completion_tokens)} out${p.requests > 1 ? ` · ${p.requests} tries (the first answer wasn't valid)` : ""}</div>`; }
+
+    // ---- Technical ----
+    const mo = c.models || {};
+    let tech = `<div class="block"><h4>Models</h4><div class="list">` +
+      row("LLM", `<span class="num">${esc(mo.llm || "–")}</span>${c.served_by ? ` <span class="pill ${c.served_by === "vllm" ? "good" : "warn"}">${esc(c.served_by)}</span>` : ""}`) +
+      row("Speech-to-text (STT)", `<span class="num">${esc(mo.stt || "–")}</span>`) +
+      row("Text-to-speech (TTS)", `<span class="num">${esc(mo.tts || "–")}</span>${mo.tts_voice || mo.voice ? ` <span class="muted">· voice ${esc(mo.tts_voice || mo.voice)}</span>` : ""}`) +
+      `</div></div>`;
+    if ((c.errors || []).length) tech += `<div class="block"><h4>Errors (${c.errors.length})</h4><div class="tx">${c.errors.map((e) => `<div class="line tool bad">✗ <b>${esc(e.stage_label || e.stage)}</b> <span class="muted">· ${esc((e.at || "").slice(11, 19))}${e.recoverable === true ? " · recovered" : ""}</span>${e.error ? `<br>${esc(e.error)}` : ""}</div>`).join("")}</div>${admin ? "" : '<div class="muted">Error messages are visible to admins only.</div>'}</div>`;
+    if (c.line) tech += `<div class="note"><b>Phone line:</b> ${esc(c.line.label || c.line_label)} · SIP ${esc(c.line.sip_status_code ?? "–")} ${esc(c.line.sip_status || "")} · rang ${secs(c.line.ring_seconds)}</div>`;
+    if (c.recording) tech += `<div class="note"><b>Recording:</b> ${c.recording.ok ? `${esc(c.recording.file)} (${esc(c.recording.storage || "")})` : `not recorded: ${esc(c.recording.error || "")}`}</div>`;
+    if (c.transfer) tech += `<div class="note"><b>Transfer:</b> ${c.transfer.ok ? `to ${esc(c.transfer.to)}` : `failed (${esc(c.transfer.error || "")})`}${c.transfer.reason ? ` · reason: ${esc(c.transfer.reason)}` : ""}</div>`;
+    if (Object.keys(c.versions || {}).length || Object.keys(c.settings || {}).length) tech += `<div class="block"><h4>Version and settings</h4><div class="code">${esc(Object.entries({ ...c.versions, ...c.settings }).map(([k, v]) => `${k}: ${typeof v === "object" && v !== null ? JSON.stringify(v) : v}`).join("\n"))}</div></div>`;
+
+    openDrawer(drawerTabs([
+      { id: "overview", label: "Overview", html: ov },
+      { id: "conversation", label: "Conversation", html: conv },
+      { id: "crm", label: `CRM${crm.length ? ` (${crm.length})` : ""}`, html: crmHtml },
+      { id: "tools", label: "Tools", html: tools },
+      { id: "speed", label: "Speed", html: speed },
+      { id: "tech", label: c.error_count ? `Technical (${c.error_count} error${c.error_count > 1 ? "s" : ""})` : "Technical", html: tech },
+    ]));
   }
   async function openSpeechRun(id) {
     const r = await api(`/api/speech/run?id=${encodeURIComponent(id)}`);
@@ -390,6 +527,7 @@
     state.wa.offset = 0;
     renderFilters(); renderQuestions().catch(showError);
   });
+  $("#hrDay").addEventListener("change", (e) => { state.hrDay = e.target.value; renderHours().catch(showError); });
   let searchT;
   $("#waSearch").addEventListener("input", (e) => {
     clearTimeout(searchT);

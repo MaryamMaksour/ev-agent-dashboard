@@ -52,6 +52,7 @@
         <div class="grid">
           <div class="card c6"><h2>WhatsApp questions per day</h2><div class="hint">All users, UAE time</div><div class="chart" id="ovWaDay"></div></div>
           <div class="card c6"><h2>WhatsApp cost per day</h2><div class="hint">Claude API cost in AED</div><div class="chart" id="ovWaCost"></div></div>
+          <div class="card c12"><h2>Voice agent calls per day</h2><div class="hint">UAE time · click a day to see it hour by hour</div><div class="chart" id="ovVcDay"></div></div>
           <div class="card c12"><h2>When the WhatsApp agent is used</h2>
             <div class="hint" id="heatHint"></div>
             <div class="heat" id="heat"></div>
@@ -119,6 +120,7 @@
     <section data-view="calls" hidden>
       <div class="seg subtabs" role="tablist" aria-label="Voice call sections">
         <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
+        <button role="tab" data-tab="busy" aria-selected="false">Busy hours</button>
         <button role="tab" data-tab="speed" aria-selected="false">Speed</button>
         <button role="tab" data-tab="quality" aria-selected="false">Quality</button>
         <button role="tab" data-tab="list" aria-selected="false">Calls</button>
@@ -129,6 +131,25 @@
           <div class="card c4"><h2>Phone line</h2><div class="hint">What happened when the agent dialled</div><div class="bars wide" id="vcLine"></div></div>
           <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
           <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div></div>
+        </div>
+      </div>
+      <div class="panel" data-panel="busy" hidden>
+        <div class="card">
+          <div class="card-head"><div><h2>Busy hours and bottlenecks</h2><div class="hint" id="hrSub"></div></div>
+            <select id="hrDay" aria-label="Day"></select></div>
+          <div id="hrBottleneck"></div>
+        </div>
+        <div class="grid">
+          <div class="card c6"><h2>Calls per hour</h2><div class="hint">When calls started · hover an hour for everything about it</div><div class="chart" id="hrCalls"></div></div>
+          <div class="card c6"><h2>Calls at the same time</h2><div class="hint">The most calls running together in each hour</div><div class="chart" id="hrAtOnce"></div></div>
+          <div class="card c12"><h2>Where the caller's wait goes, per hour</h2><div class="hint">Typical seconds for each step of a turn. The tallest colour is the bottleneck.</div><div class="chart" id="hrStages"></div></div>
+          <div class="card c6"><h2>Tokens per hour</h2><div class="hint">LLM tokens in + out during the calls</div><div class="chart" id="hrTokens"></div></div>
+          <div class="card c6"><h2>Typical call length per hour</h2><div class="hint">Seconds</div><div class="chart" id="hrLength"></div></div>
+          <div class="card c12"><h2>Rush hours</h2>
+            <div class="hint" id="vcHeatHint"></div>
+            <div class="heat" id="vcHeat"></div>
+            <div class="ramp"><span>Fewer</span><span id="vcRampSw"></span><span>More</span></div>
+          </div>
         </div>
       </div>
       <div class="panel" data-panel="speed" hidden>
@@ -150,7 +171,7 @@
         </div>
       </div>
       <div class="panel" data-panel="list" hidden>
-        <div class="card"><h2>Calls</h2><div class="hint">Click a call for every turn, the tools it used, the transcript and the result</div>
+        <div class="card"><h2>Calls</h2><div class="hint">Click a call to see the client, the result, what changed in the CRM and the conversation</div>
           <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Lead</th><th>Phone line</th><th>Result</th><th>Ended</th><th class="r">Length</th><th class="r">First token</th><th class="r">Tokens</th><th>Errors</th><th>Recording</th><th>Person</th></tr></thead><tbody id="vcRows"></tbody></table></div>
         </div>
       </div>

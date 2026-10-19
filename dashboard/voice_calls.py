@@ -18,6 +18,7 @@ import json
 import os
 import re
 from collections import Counter, defaultdict
+from datetime import timedelta
 from typing import Optional
 
 from . import metrics as m
@@ -140,10 +141,12 @@ def parse_call(raw: dict, call_id: str) -> dict:
         "transcript": raw.get("transcript") or [], "summary": extraction.get("summary"),
         "filled_after_call": raw.get("filled_after_call") or {}, "disagreements": raw.get("disagreements") or [],
         "error": raw.get("error"), "metrics": metrics,
+        # from events.jsonl (call_started), filled in by VoiceCallSource.call()
+        "lead_name": None, "lead_status_before": None,
     }
 
 
-TEXT_FIELDS = ("transcript", "tool_calls", "actions", "summary", "filled_after_call", "disagreements")
+TEXT_FIELDS = ("transcript", "tool_calls", "actions", "summary", "filled_after_call", "disagreements", "lead_name")
 
 
 def llm_rows(lines: list, *, show_text: bool) -> list:
@@ -254,6 +257,10 @@ class VoiceCallSource:
         folder = os.path.join(self.calls_dir, call_id)
         c["llm_log"] = _read_jsonl(os.path.join(folder, "llm.jsonl"))
         c["crm_log"] = _read_jsonl(os.path.join(folder, "crm_changes.jsonl"))
+        started = next((e for e in _read_jsonl(os.path.join(folder, "events.jsonl"))
+                        if e.get("event") == "call_started"), {})
+        c["lead_name"] = started.get("lead_name")
+        c["lead_status_before"] = started.get("lead_status")
         return c
 
     def processing(self) -> int:
@@ -339,6 +346,83 @@ class VoiceCallSource:
             "calls": [public_call(c, full=False, show_text=False) for c in cs[:100]],
             "speech": self.speech_latest(),
             "status": self.status(),
+        }
+
+    # ---------- busy hours and bottlenecks ----------
+    def per_day(self, days: Optional[int], now=None) -> list:
+        return m.day_series(self.calls(days, now), self.tz, days, now=now)
+
+    def hours(self, days: Optional[int], day: Optional[str] = None, now=None) -> dict:
+        """Per hour of the day (local time): how many calls, how many at once, where the caller's wait goes,
+        tokens and call length. `day` (YYYY-MM-DD) narrows it to one day. A turn counts in its call's start hour."""
+        in_range = self.calls(days, now)
+        days_with_calls = Counter(c["ts"].astimezone(self.tz).date().isoformat() for c in in_range)
+        cs = [c for c in in_range if not day or c["ts"].astimezone(self.tz).date().isoformat() == day]
+        by_hour: dict = defaultdict(list)
+        for c in cs:
+            by_hour[c["ts"].astimezone(self.tz).hour].append(c)
+
+        # most calls in progress at the same moment, per hour (a call with no end counts as one minute)
+        spans = [(c["ts"], c["ended_at"] if c["ended_at"] and c["ended_at"] > c["ts"] else c["ts"] + timedelta(minutes=1))
+                 for c in cs]
+        moments = sorted([(s, 1) for s, _ in spans] + [(e, -1) for _, e in spans], key=lambda x: (x[0], x[1]))
+        at_once: Counter = Counter()
+        live = 0
+        for when, step in moments:
+            live += step
+            if step > 0:
+                h = when.astimezone(self.tz).hour
+                at_once[h] = max(at_once[h], live)
+
+        def med(vals):
+            return m.rnd(m.percentile([v for v in vals if v is not None], 0.5), 3)
+
+        rows = []
+        for h in range(24):
+            hc = by_hour.get(h, [])
+            turns = [t for c in hc for t in c["turns"]]
+            stages = {k: med(t.get(k) for t in turns) for k in ("eou", "llm_ttft", "tts_ttfb")}
+            known = {k: v for k, v in stages.items() if v is not None}
+            rows.append({
+                "hour": h, "calls": len(hc), "at_once": at_once.get(h, 0), "turns": len(turns),
+                "wait_median": med(t.get("end_to_end") for t in turns),
+                "wait_p95": m.rnd(m.percentile([t["end_to_end"] for t in turns if t.get("end_to_end") is not None], 0.95), 3),
+                "stages": stages, "bottleneck": max(known, key=known.get) if known else None,
+                "tokens": sum(c["tokens_total"] or 0 for c in hc),
+                "duration_median": m.rnd(m.percentile([c["duration_seconds"] for c in hc
+                                                       if c["duration_seconds"] is not None], 0.5), 1),
+                "slow_turns": sum(1 for t in turns if (t.get("end_to_end") or 0) >= SLOW_TURN_SECONDS),
+            })
+
+        # busy hours (the top quarter by calls) against the rest: does the wait grow with load?
+        active = sorted((r for r in rows if r["calls"]), key=lambda r: -r["calls"])
+        busy_n = max(1, len(active) // 4) if len(active) >= 2 else 0
+        busy, quiet = active[:busy_n], active[busy_n:]
+
+        def wait_of(rs):
+            return med(t.get("end_to_end") for r in rs for c in by_hour[r["hour"]] for t in c["turns"])
+
+        load = None
+        if busy and quiet:
+            load = {"busy_hours": [r["hour"] for r in busy], "busy_wait_median": wait_of(busy),
+                    "quiet_wait_median": wait_of(quiet)}
+            if load["busy_wait_median"] is None or load["quiet_wait_median"] is None:
+                load = None
+        turns_all = [t for c in cs for t in c["turns"]]
+        slow = Counter(t.get("slowest_stage") or "Not recorded" for t in turns_all
+                       if (t.get("end_to_end") or 0) >= SLOW_TURN_SECONDS)
+        slow_total = sum(slow.values())
+        peak = max(rows, key=lambda r: r["calls"]) if cs else None
+        return {
+            "day": day, "calls": len(cs), "slow_turn_seconds": SLOW_TURN_SECONDS,
+            "days": [{"date": d, "calls": n} for d, n in sorted(days_with_calls.items(), reverse=True)],
+            "hours": rows,
+            "stage_labels": {"eou": "Speech-to-text", "llm_ttft": "LLM first token", "tts_ttfb": "Text-to-speech"},
+            "slow_reasons": [{"label": k, "count": v, "share": m.rnd(v / slow_total, 3)} for k, v in slow.most_common()],
+            "peak": {"hour": peak["hour"], "calls": peak["calls"]} if peak and peak["calls"] else None,
+            "max_at_once": max(at_once.values()) if at_once else 0,
+            "load": load,
+            "heatmap": m.heatmap(in_range, self.tz),
         }
 
     # ---------- speech accuracy ----------
