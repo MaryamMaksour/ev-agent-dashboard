@@ -286,7 +286,23 @@
     } else {
       b += `<div class="note">Question and answer text are visible to admins only.</div>`;
     }
-    b += `<div class="note"><b>Not saved yet:</b> which tools the agent ran, what each returned, token counts, and whether it was confident. Phase 2 adds these steps.</div>`;
+    const x = r.details || {};
+    if (x.answer_type || x.tokens_in != null) {
+      const fin = { submit_answer: "answered through the final-answer step", free_text: "answered in plain text", cut_off: "answer cut off (token limit)", round_limit_wrapup: "research limit reached, wrapped up", round_limit_error: "research limit reached, no answer" };
+      b += `<div class="d-sum"><div><span>Answer type</span><b>${esc(x.answer_type || "–")}</b></div><div><span>Confident</span><b>${x.confident == null ? "–" : x.confident ? "Yes" : "No"}</b></div><div><span>Tokens in / out</span><b>${x.tokens_in == null ? "–" : `${num(x.tokens_in)} / ${num(x.tokens_out)}`}</b></div><div><span>Model calls · rounds</span><b>${x.model_calls == null ? "–" : `${num(x.model_calls)} · ${num(x.rounds)}`}</b></div></div>`;
+      const bits = [x.finish && (fin[x.finish] || x.finish), x.figure_removed ? "a number with no data behind it was removed" : "", x.forced_resubmit ? `asked to finish properly ${x.forced_resubmit}×` : ""].filter(Boolean);
+      if (bits.length) b += `<div class="note">${bits.map(esc).join("; ")}.</div>`;
+    } else {
+      b += `<div class="note">This question was answered before the detailed log was switched on, so tokens, confidence and steps were not saved.</div>`;
+    }
+    if (admin && r.steps && r.steps.length) {
+      b += `<div class="block"><h4>Steps</h4><div class="code">${esc(r.steps.map((s) => s.type === "model"
+        ? `Model call ${s.n} · ${secs(s.seconds)} · ${num(s.in)} in / ${num(s.out)} out${s.tools && s.tools.length ? ` · asked for ${s.tools.join(", ")}` : ""}${s.text ? `
+    ${s.text.replace(/\s+/g, " ").slice(0, 300)}` : ""}`
+        : `Tool ${s.tool}${s.system ? ` (${s.system})` : ""} · ${secs(s.seconds)} · ${s.ok ? `${num(s.rows)} rows${s.more ? ", more available" : ""}` : `FAILED: ${s.error}`}
+    ${JSON.stringify(s.input || {}).slice(0, 300)}`).join("
+"))}</div></div>`;
+    }
     openDrawer(b);
   }
 

@@ -111,6 +111,9 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(all(i["question"] is None for i in json.loads(data)["items"]))
         r, data = self.req("GET", f"/api/whatsapp/question?id={items[0]['id']}", cookie=viewer)
         self.assertIsNone(json.loads(data)["answer"])
+        self.assertNotIn("steps", json.loads(data))  # tool inputs and the model's plan are admin-only
+        r, data = self.req("GET", f"/api/whatsapp/question?id={items[0]['id']}", cookie=admin)
+        self.assertIn("steps", json.loads(data))
         r, _ = self.req("GET", "/api/whatsapp/logins?range=all", cookie=viewer)
         self.assertEqual(r.status, 403)
         errs = json.loads(self.req("GET", "/api/whatsapp/errorlist?range=all", cookie=viewer)[1])["items"]

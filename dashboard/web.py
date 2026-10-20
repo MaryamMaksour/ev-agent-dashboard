@@ -251,6 +251,7 @@ def make_handler(app: App):
                     return self.json(404, {"error": "That question was not found."})
                 if admin:
                     app.access_log("view_question", username=user["username"], question_id=qid)
+                    item["steps"] = app.whatsapp.steps(qid)
                 return self.json(200, item)
             if path == "/api/whatsapp/alerts":
                 return self.json(200, app.whatsapp.alerts())

@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 NOW = datetime(2026, 10, 16, 8, 0, tzinfo=timezone.utc)  # 12:00 UAE, a Friday
 
 
-def make_evproto(folder: str) -> None:
+def make_evproto(folder: str, phase2: bool = True) -> None:
+    """phase2=False builds the older qa_log (no extra columns, no steps table) to test the fallback."""
     os.makedirs(folder, exist_ok=True)
     a = sqlite3.connect(os.path.join(folder, "audit.db"))
     a.executescript("""
@@ -34,6 +35,22 @@ def make_evproto(folder: str) -> None:
         ts = (NOW - timedelta(minutes=mins)).isoformat()
         a.execute("INSERT INTO qa_log (ts,user_id,name,role,question,answer,sources,model,cost_usd,elapsed_ms,ip) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                   (ts, uid, uid.title(), "user", q, ans, json.dumps(src), model, cost, ms, "10.0.0.5"))
+    if phase2:
+        for col, typ in (("answer_type", "TEXT"), ("confident", "INTEGER"), ("language", "TEXT"), ("tokens_in", "INTEGER"),
+                         ("tokens_out", "INTEGER"), ("model_calls", "INTEGER"), ("rounds", "INTEGER"), ("finish", "TEXT")):
+            a.execute(f"ALTER TABLE qa_log ADD COLUMN {col} {typ}")
+        a.execute("UPDATE qa_log SET answer_type='crm_data', confident=1, language='en', tokens_in=1250, tokens_out=110,"
+                  " model_calls=2, rounds=2, finish='submit_answer' WHERE id=1")
+        a.executescript("""
+        CREATE TABLE steps (id INTEGER PRIMARY KEY AUTOINCREMENT, qa_id INTEGER NOT NULL, n INTEGER, type TEXT, seconds REAL, data TEXT);
+        """)
+        for n, typ, secs_, data in (
+            (1, "model", 1.2, {"type": "model", "n": 1, "model": "claude-haiku-4-5", "seconds": 1.2, "in": 900, "out": 60,
+                               "text": "count the LUME deals", "tools": ["crm_count"]}),
+            (1, "tool", 0.4, {"type": "tool", "n": 1, "tool": "crm_count", "system": "Zoho CRM", "seconds": 0.4, "ok": True,
+                              "rows": 1, "input": {"module": "Deals"}}),
+        ):
+            a.execute("INSERT INTO steps (qa_id,n,type,seconds,data) VALUES (1,?,?,?,?)", (n, typ, secs_, json.dumps(data)))
     a.executescript("""
     CREATE TABLE error_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT NOT NULL, source TEXT,
       message TEXT, detail TEXT, user_id TEXT, name TEXT, question TEXT, path TEXT, ip TEXT);

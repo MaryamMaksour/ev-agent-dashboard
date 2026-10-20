@@ -67,6 +67,17 @@ def _error_label(kind: str) -> str:
     return ERROR_KINDS.get(kind, (kind or "Other",))[0]
 
 
+# qa_log columns added by ev-proto after Phase 0 (all optional)
+_QA_EXTRA = ("answer_type", "confident", "language", "conversation_id", "turn_index", "tokens_in", "tokens_out",
+             "cache_read", "cache_write", "model_calls", "model_requested", "rounds", "app_version", "finish",
+             "grounding_ok", "figure_removed", "forced_resubmit")
+
+
+def _public_details(d: dict) -> dict:
+    # numbers and labels only: safe for viewers too
+    return {k: v for k, v in d.items() if k != "language" and v is not None}
+
+
 _ARABIC = re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿ]")
 _DOUBT = re.compile(r"are you sure|double[- ]?check|check again|is that (all|right|correct)|really\?|"
                     r"متأكد|تأكد|تحقق|صحيح؟", re.I)
@@ -125,6 +136,14 @@ class WhatsAppSource:
                 return []
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
+    def _qa_extra_columns(self) -> list:
+        # columns ev-proto added in Phase 1/2; older databases don't have them
+        if not os.path.isfile(self.audit_path):
+            return []
+        with closing(_connect(self.audit_path)) as conn:
+            have = {r[1] for r in conn.execute("PRAGMA table_info(qa_log)")}
+        return [c for c in _QA_EXTRA if c in have]
+
     def questions(self, days: Optional[int] = None, now: Optional[datetime] = None) -> list:
         start = m.since(days, now)
         # read a little earlier than the window so "asked again" can see the question before the first one
@@ -133,9 +152,11 @@ class WhatsAppSource:
         if start:
             where = "WHERE ts >= ?"
             params = ((start - _pad()).astimezone(timezone.utc).isoformat(),)
+        extra = self._qa_extra_columns()
+        extra_sql = "".join(f", {c}" for c in extra)
         raw = self._rows(self.audit_path, "qa_log",
                          "SELECT id, ts, user_id, name, role, question, answer, sources, model, cost_usd, "
-                         f"elapsed_ms, ip FROM qa_log {where} ORDER BY id", params)
+                         f"elapsed_ms, ip{extra_sql} FROM qa_log {where} ORDER BY id", params)
         rows = []
         for r in raw:
             ts = m.parse_ts(r["ts"])
@@ -153,7 +174,8 @@ class WhatsAppSource:
                 "sources": sources if isinstance(sources, list) else [], "model": r["model"] or "unknown",
                 "cost_usd": cost, "cost_aed": cost * USD_TO_AED, "seconds": seconds, "ip": r["ip"] or "",
                 "outcome": classify(r["answer"], sources if isinstance(sources, list) else []),
-                "language": "ar" if _ARABIC.search(r["question"] or "") else "en",
+                "language": r.get("language") or ("ar" if _ARABIC.search(r["question"] or "") else "en"),
+                "details": {c: r.get(c) for c in extra},
                 "slow": seconds > SLOW_ANSWER_SECONDS, "asked_again": False, "doubted": False,
             })
         _mark_followups(rows)
@@ -414,6 +436,18 @@ class WhatsAppSource:
         page = rows[offset:offset + limit]
         return {"total": len(rows), "items": [public_question(r, show_text, full=False) for r in page]}
 
+    def steps(self, qid: int) -> list:
+        """Model calls and tool calls behind one answer (ev-proto Phase 2). Callers must only pass this to admins:
+        it holds the model's written plan and the queries sent to Zoho / MenaMe."""
+        raw = self._rows(self.audit_path, "steps", "SELECT data FROM steps WHERE qa_id=? ORDER BY id", (qid,))
+        out = []
+        for r in raw:
+            try:
+                out.append(json.loads(r["data"] or "{}"))
+            except (TypeError, ValueError):
+                continue
+        return out
+
     def question(self, qid: int, *, show_text: bool) -> Optional[dict]:
         for r in self.questions(None):
             if r["id"] == qid:
@@ -487,4 +521,5 @@ def public_question(r: dict, show_text: bool, full: bool) -> dict:
         out["answer"] = r["answer"] if show_text else None
         out["sources"] = r["sources"] if show_text else None
         out["ip"] = r["ip"] if show_text else None
+        out["details"] = _public_details(r.get("details") or {})
     return out
