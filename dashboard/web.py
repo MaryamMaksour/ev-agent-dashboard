@@ -249,6 +249,26 @@ def make_handler(app: App):
                 if admin:
                     app.access_log("view_question", username=user["username"], question_id=qid)
                 return self.json(200, item)
+            if path == "/api/whatsapp/errors":
+                return self.json(200, app.whatsapp.error_summary(days))
+            if path == "/api/whatsapp/errorlist":
+                try:
+                    offset = max(int(qs.get("offset", "0") or 0), 0)
+                except ValueError:
+                    return self.json(400, {"error": "offset must be a number."})
+                return self.json(200, app.whatsapp.error_list(days, show_text=admin, kind=qs.get("kind", "")[:40],
+                                                              offset=offset))
+            if path == "/api/whatsapp/error":
+                try:
+                    eid = int(qs.get("id", ""))
+                except ValueError:
+                    return self.json(400, {"error": "Missing error id."})
+                item = app.whatsapp.error(eid, show_text=admin)
+                if not item:
+                    return self.json(404, {"error": "That error was not found."})
+                if admin:
+                    app.access_log("view_error", username=user["username"], error_id=eid)
+                return self.json(200, item)
             if path == "/api/whatsapp/logins":
                 if not admin:
                     return self.json(403, {"error": "Only admins can see the login log."})

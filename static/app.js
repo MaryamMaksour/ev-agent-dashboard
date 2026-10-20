@@ -25,7 +25,7 @@
     return Math.round(s / 86400) + " days ago";
   };
 
-  const state = { me: null, page: "overview", range: "30", data: {}, wa: { outcome: "", flag: "", q: "", offset: 0 }, tab: {}, hrDay: "", cl: { q: "", sort: "calls", min: 0, offset: 0 } };
+  const state = { me: null, page: "overview", range: "30", data: {}, wa: { outcome: "", flag: "", q: "", offset: 0 }, we: { kind: "", offset: 0 }, tab: {}, hrDay: "", cl: { q: "", sort: "calls", min: 0, offset: 0 } };
 
   async function api(path) {
     const r = await fetch(path, { credentials: "same-origin", headers: { Accept: "application/json" } });
@@ -166,7 +166,7 @@
     $("#ovKpis").innerHTML = [
       kpi("WhatsApp questions", num(t.questions), `${num(t.people)} people asked`),
       kpi("WhatsApp cost", aed(t.cost_aed), t.cost_aed_per_question != null ? `${aed(t.cost_aed_per_question, 3)} per question` : ""),
-      kpi("Typical answer time", secs(t.seconds_p50), `Slowest 5%: ${secs(t.seconds_p95)}`),
+      kpi("Typical answer time", secs(t.seconds_p50), `Slowest 1 in 20: ${secs(t.seconds_p95)}`),
       kpi("Answered with sources", pct(t.questions ? (wa.outcomes.find((o) => o.key === "answered").count / t.questions) : null), "of all questions"),
       kpi("Voice agent calls", vc.found ? num(vc.calls) : "–", vc.found ? `Last call ${ago(vc.last_call)}` : "No calls folder yet"),
     ].join("");
@@ -188,9 +188,9 @@
     const t = d.totals, n = t.questions;
     const answered = d.outcomes.find((o) => o.key === "answered").count;
     $("#waKpis").innerHTML = [
-      kpi("Questions", num(n), `${num(t.people)} people · ${pct(t.arabic_share)} in Arabic`),
+      kpi("Questions", num(n), `${num(t.people)} people`),
       kpi("Answered with sources", pct(n ? answered / n : null), `${num(answered)} questions`),
-      kpi("Typical answer time", secs(t.seconds_p50), `Slowest 5%: ${secs(t.seconds_p95)} · ${num(t.slow)} over 10 s`),
+      kpi("Typical answer time", secs(t.seconds_p50), `Slowest 1 in 20: ${secs(t.seconds_p95)} · ${num(t.slow)} over 10 s`),
       kpi("Cost", aed(t.cost_aed), `${aed(t.cost_aed_per_question, 3)} per question`),
       kpi("Asked again", num(t.asked_again), `Same question reworded within 3 min`),
       kpi("Doubted", num(t.doubted), `Followed by "are you sure?"`),
@@ -203,6 +203,55 @@
     hbars($("#waModules"), d.top_modules.map((x) => ({ l: x.name, v: x.count })), { empty: "No sources saved in this period." });
     renderFilters();
     await renderQuestions();
+    await renderErrors();
+  }
+
+  // ---------- WhatsApp errors (error_log, written by the agent) ----------
+  async function renderErrors() {
+    const d = await api(`/api/whatsapp/errors?range=${state.range}`);
+    const t = d.totals, badge = $("#waErrBadge");
+    badge.hidden = !t.errors; badge.textContent = t.errors > 99 ? "99+" : String(t.errors);
+    $("#weNote").hidden = d.available;
+    $("#weBody").hidden = !d.available;
+    if (!d.available) return;
+    const top = d.by_kind[0];
+    $("#weKpis").innerHTML = [
+      kpi("Errors", num(t.errors), t.last ? `Last one ${ago(t.last)}` : "None in this period"),
+      kpi("Questions hit", num(t.questions), t.question_share != null ? `${pct(t.question_share, 1)} of all questions` : ""),
+      kpi("People affected", num(t.people), ""),
+      kpi("Most common", top ? esc(top.label) : "–", top ? `${num(top.count)} errors` : ""),
+    ].join("");
+    dayBars($("#weDay"), d.per_day, { name: "Errors", label: "WhatsApp errors per day", color: "--crit", empty: "No errors in this period." });
+    hbars($("#weKinds"), d.by_kind.map((x) => ({ l: x.label, v: x.count, c: "--crit" })), { empty: "No errors in this period." });
+    $$("#weKinds .bar-row .name").forEach((el, i) => { el.title = `${d.by_kind[i].label}: ${d.by_kind[i].hint}`; });
+    hbars($("#weSources"), d.by_source.map((x) => ({ l: x.name, v: x.count, c: "--serious" })), { empty: "No errors in this period." });
+    hbars($("#weSystems"), d.by_system.map((x) => ({ l: x.name, v: x.count, c: "--warn" })), { empty: "No data system errors in this period." });
+    const chips = [["", "All"], ...Object.entries(d.kinds)];
+    $("#weFilters").innerHTML = chips.map(([k, l]) => `<button type="button" data-kind="${esc(k)}" aria-pressed="${state.we.kind === k}">${esc(l)}</button>`).join("");
+    await renderErrorRows();
+  }
+  async function renderErrorRows() {
+    const w = state.we, admin = state.me.role === "admin";
+    const d = await api(`/api/whatsapp/errorlist?${new URLSearchParams({ range: state.range, kind: w.kind, offset: w.offset })}`);
+    $("#weRows").innerHTML = d.items.length ? d.items.map((r) => `<tr class="click" tabindex="0" data-err="${r.id}"><td class="num muted">${esc(when(r.ts))}</td><td>${esc(r.name || "–")}</td><td><span class="pill crit">${esc(r.kind_label)}</span></td><td class="num">${esc(r.source || "–")}</td><td class="q">${admin ? esc(r.message) : '<span class="muted">Hidden for viewers</span>'}${admin && r.question ? `<br><span class="muted">Q: ${esc(r.question)}</span>` : ""}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">No errors match.</td></tr>`;
+    const from = d.total ? w.offset + 1 : 0, to = Math.min(w.offset + 25, d.total);
+    $("#wePager").innerHTML = `<span>${from}–${to} of ${num(d.total)}</span><button type="button" data-p="-1" ${w.offset === 0 ? "disabled" : ""}>Newer</button><button type="button" data-p="1" ${to >= d.total ? "disabled" : ""}>Older</button>`;
+  }
+  async function openError(id) {
+    const r = await api(`/api/whatsapp/error?id=${encodeURIComponent(id)}`);
+    const admin = state.me.role === "admin";
+    $("#dTitle").textContent = r.kind_label;
+    $("#dMeta").innerHTML = [when(r.ts), r.name, r.source, r.system].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
+    let b = `<div class="note">${esc(r.kind_hint)}</div>`;
+    if (admin) {
+      b += `<div class="block"><h4>What went wrong</h4><div class="text">${esc(r.message || "–")}</div></div>`;
+      if (r.question) b += `<div class="block"><h4>Question</h4><div class="text">${esc(r.question)}</div></div>`;
+      if (r.detail) b += `<div class="block"><h4>${r.kind === "tool_error" ? "What the agent sent" : "Details"}</h4><div class="code">${esc(r.detail)}</div></div>`;
+      b += `<div class="block"><h4>Page · IP</h4><div class="muted num">${esc(r.path || "–")} · ${esc(r.ip || "–")}</div></div>`;
+    } else {
+      b += `<div class="note">The error message, question and technical details are visible to admins only.</div>`;
+    }
+    openDrawer(b);
   }
   function renderFilters() {
     const outs = Object.entries(state.me.outcomes);
@@ -250,27 +299,24 @@
     } else {
       $("#vcKpis").innerHTML = [
         kpi("Calls", num(t.calls), `${num(t.reached)} reached the lead`),
-        kpi("Agent closed the call", pct(t.reached ? t.agent_closed / t.reached : null), `${num(t.agent_closed)} of ${num(t.reached)} reached`),
         kpi("Typical call length", dur(t.duration_median), "calls that reached the lead"),
-        kpi("Tokens per call", num(t.tokens_per_call), `${num(t.tokens_per_second, 1)} tokens/s · ${num(t.tokens_total)} in total`),
         kpi("Asked for a person", num(t.transfer_asked), `${num(t.transferred)} transferred`),
         kpi("Recorded", num(t.recorded), `Agent asked the caller to repeat: ${num(t.repeat_requests)}`),
-        kpi("Calls with errors", num(t.calls_with_errors), `${num(t.errors)} errors · caller interrupted ${num(t.interruptions)} times`),
         ...(d.cost.configured ? [
           kpi("Cost", aed(d.cost.total, 0), `${aed(d.cost.fixed, 0)} fixed · ${aed(d.cost.line, 0)} phone line`),
           kpi("Cost per qualified lead", aed(d.cost.per_qualified, 0), `${num(d.cost.qualified)} qualified · ${aed(d.cost.per_call)} per call`),
         ] : [kpi("Cost", "–", "Not set: VOICE_GPU_COST_AED_MONTH, VOICE_LINE_COST_AED_MIN")]),
       ].join("") + (t.processing ? `<div class="note">${num(t.processing)} call(s) still being processed (the post-call check hasn't finished). If this stays, run <span class="num">python -m agent.postcall</span> in the voice agent.</div>` : "");
     }
+    $("#vcTechKpis").innerHTML = d.status.found ? [
+      kpi("Agent closed the call", pct(t.reached ? t.agent_closed / t.reached : null), `${num(t.agent_closed)} of ${num(t.reached)} reached`),
+      kpi("Tokens per call", num(t.tokens_per_call), `${num(t.tokens_per_second, 1)} tokens/s · ${num(t.tokens_total)} in total`),
+      kpi("Calls with errors", num(t.calls_with_errors), `${num(t.errors)} errors · caller interrupted ${num(t.interruptions)} times`),
+    ].join("") : "";
     $("#vcStages").innerHTML = d.stages.map((s, i) => `<tr><td>${i === 0 ? "<b>" : ""}${esc(s.label)}${i === 0 ? "</b>" : ""}</td><td class="r num">${secs(s.min)}</td><td class="r num">${secs(s.median)}</td><td class="r num">${secs(s.p95)}</td><td class="r num">${secs(s.max)}</td><td class="r num">${num(s.turns)}</td></tr>`).join("");
     const lineTone = { answered: "--good", busy: "--warn", no_answer: "--serious", browser: "--ink-3" };
     hbars($("#vcLine"), d.line_results.map((x) => ({ l: x.label, v: x.count, c: lineTone[x.key] || "--crit" })), { empty: "No calls in this period." });
-    hbars($("#vcClass"), d.classification.map((x) => ({ l: x.label, v: x.count, c: "--s2" })), { empty: "No calls in this period." });
-    const k = d.cost;
-    $("#vcCostHint").textContent = k.configured
-      ? `${aed(k.monthly, 0)} a month fixed (shared over the days) + ${aed(k.line_rate)} per answered phone minute · ${num(k.line_minutes)} minutes in this period · ${aed(k.per_reached)} per reached call`
-      : "Set VOICE_GPU_COST_AED_MONTH (and VOICE_OTHER_COST_AED_MONTH, VOICE_LINE_COST_AED_MIN) in .env to see what the calls cost.";
-    dayBars($("#vcCostDay"), k.configured ? k.per_day : [], { name: "Cost", label: "Voice agent cost per day", color: "--s2", fmt: (v) => aed(v), empty: "Cost not set." });
+    classShare($("#vcClass"), d.classification);
     hbars($("#vcEnded"), d.ended_by.map((x) => ({ l: x.label, v: x.count, c: x.label.startsWith("Agent") ? "--good" : "--s1" })), { empty: "No calls." });
     $("#vcSlowHint").textContent = `Turns where the caller waited ${d.slow_turn_seconds} s or more`;
     hbars($("#vcSlow"), d.slowest_stage.map((x) => ({ l: x.label, v: x.count, c: "--crit" })), { empty: `No turn took ${d.slow_turn_seconds} s or more.` });
@@ -280,13 +326,6 @@
         `<div class="li"><div>Typical time<small>after the caller hung up</small></div><span class="pill">${secs(t.post_call_seconds_median)}</span></div>` +
         `<div class="li"><div>Tokens per check<small>in + out</small></div><span class="pill">${num(t.post_call_tokens_per_call)}</span></div></div>`
       : `<div class="muted">No post-call checks recorded in this period.</div>`;
-    const sp = d.speech;
-    const runCard = (r, title) => {
-      if (!r) return `<div class="li"><div>${esc(title)}<small>Not run yet</small></div><span class="pill">–</span></div>`;
-      const s = r.summary || {};
-      return `<div class="li"><div><button type="button" class="linkish" data-speech="${esc(r.id)}">${esc(title)}</button><small>${esc(when(r.run_at))} · STT ${esc(r.models.stt || "?")}${r.models.tts ? ` · TTS ${esc(r.models.tts)} (${esc(r.models.voice || "")})` : ""} · ${num(s.items)} items</small><small>Accuracy ${pct(s.accuracy, 1)} · key terms ${pct(s.key_term_accuracy, 1)} · STT ${secs(s.stt_seconds_avg)} per item${s.tts_seconds_avg != null ? ` · TTS ${secs(s.tts_seconds_avg)}` : ""}</small></div><span class="pill ${s.verdict === "GOOD ENOUGH" ? "good" : "crit"}">${esc(s.verdict || "–")}</span></div>`;
-    };
-    $("#vcSpeech").innerHTML = `<div class="list">${runCard(sp.recordings, "Real recordings (speech-to-text)")}${runCard(sp.round_trip, "Round trip (text-to-speech → speech-to-text)")}</div><div class="note">Targets: accuracy ≥ 90%, key terms (names, areas, amounts) ≥ 95%. Real recordings are the result to trust.</div>`;
     $("#vcModels").innerHTML = d.by_model.map((x) => `<tr><td class="num">${esc(x.model)}</td><td>${x.served_by ? `<span class="pill ${x.served_by === "vllm" ? "good" : "warn"}">${esc(x.served_by)}</span>` : '<span class="muted">–</span>'}</td><td class="r num">${x.calls}</td><td class="r num">${secs(x.ttft_median)}</td><td class="r num">${secs(x.e2e_median)}</td><td class="r num">${num(x.tokens_per_call)}</td><td class="r num">${x.qualified}</td><td class="r num">${x.calls_with_errors}</td></tr>`).join("") || `<tr><td colspan="8" class="empty">No answered calls.</td></tr>`;
     const lineCls = { answered: "good", busy: "warn", no_answer: "serious", browser: "" };
     await renderHours();
@@ -295,6 +334,38 @@
     await renderCompliance();
     $("#vcRows").innerHTML = d.calls.map((c) => `<tr class="click" tabindex="0" data-vcall="${esc(c.id)}"><td class="num muted">${esc(when(c.ts))}</td><td>${esc(c.lead_id)}</td><td><span class="pill ${lineCls[c.line_result] ?? "crit"}">${esc(c.line_label)}</span></td><td>${esc(c.classification_label)}</td><td class="muted">${esc(c.ended_by_label)}</td><td class="r num">${dur(c.duration_seconds)}</td><td class="r num">${secs(c.ttft_median)}</td><td class="r num">${c.tokens_total ? num(c.tokens_total) : "–"}</td><td>${c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : '<span class="muted">–</span>'}</td><td>${c.recorded ? '<span class="pill good">Yes</span>' : c.recording ? '<span class="pill crit">Failed</span>' : '<span class="muted">–</span>'}</td><td>${c.transfer_asked ? `<span class="pill ${c.transferred ? "good" : "warn"}">${c.transferred ? "Transferred" : "Asked"}</span>` : '<span class="muted">–</span>'}</td></tr>`).join("") || `<tr><td colspan="11" class="empty">No calls in this period.</td></tr>`;
   }
+  // classification: a donut with the total in the middle and a list beside it. Works for any number of classes.
+  const CLASS_COLOR = { qualified: "--good", interested: "--s1", callback: "--accent", not_interested: "--serious", do_not_call: "--crit",
+    wrong_number: "--warn", no_conversation: "--ink-3", not_reached: "--ink-2" };
+  const CLASS_ORDER = Object.keys(CLASS_COLOR);
+  function classShare(el, items) {
+    const total = items.reduce((a, x) => a + x.count, 0);
+    if (!total) { el.innerHTML = `<div class="empty">No calls in this period.</div>`; return; }
+    const rank = (k) => { const i = CLASS_ORDER.indexOf(k); return i < 0 ? 99 : i; };
+    const xs = items.slice().sort((a, b) => rank(a.key) - rank(b.key) || b.count - a.count);
+    const col = (x) => `var(${CLASS_COLOR[x.key] || "--h2"})`;
+    // donut: one circle per class, each drawn as a dash of the ring starting where the previous one ended
+    const R = 70, C = 2 * Math.PI * R, gap = xs.length > 1 ? 2 : 0;
+    let at = 0;
+    const arcs = xs.map((x, i) => {
+      const len = (x.count / total) * C;
+      const seg = `<circle cx="90" cy="90" r="${R}" fill="none" stroke="${col(x)}" stroke-width="26" data-i="${i}"
+        stroke-dasharray="${Math.max(0.5, len - gap)} ${C}" stroke-dashoffset="${-at}" transform="rotate(-90 90 90)"/>`;
+      at += len;
+      return seg;
+    }).join("");
+    el.innerHTML = `<div class="pie">
+      <svg viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="How calls were classified">${arcs}
+        <text x="90" y="88" text-anchor="middle" class="pie-total">${num(total)}</text><text x="90" y="108" text-anchor="middle" class="pie-sub">calls</text></svg>
+      <div class="pie-legend">${xs.map((x) => `<div class="pl"><span class="sw" style="background:${col(x)}"></span><span class="lab">${esc(x.label)}</span><b class="num">${num(x.count)}</b><small class="num">${pct(x.count / total)}</small></div>`).join("")}</div>
+    </div>`;
+    $$("circle[data-i]", el).forEach((c) => {
+      const x = xs[+c.dataset.i];
+      c.addEventListener("mousemove", (e) => showTip(`<b>${esc(x.label)}</b><div class="row"><span>Calls</span><span>${num(x.count)} · ${pct(x.count / total)}</span></div>`, e));
+      c.addEventListener("mouseleave", hideTip);
+    });
+  }
+
   // tabs inside the drawer: [{ id, label, html }]; the first one opens
   function drawerTabs(tabs) {
     return `<div class="seg subtabs dtabs" role="tablist" aria-label="Call details">${tabs.map((t, i) => `<button role="tab" data-dtab="${t.id}" aria-selected="${i === 0}" tabindex="${i ? -1 : 0}">${t.label}</button>`).join("")}</div>` +
@@ -326,18 +397,16 @@
     const dayName = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
     sel.innerHTML = `<option value="">All days in this period</option>` + days.map((x) => `<option value="${esc(x.date)}" ${x.date === state.hrDay ? "selected" : ""}>${esc(dayName(x.date))} · ${num(x.calls)} calls</option>`).join("");
     const H = d.hours;
-    const tipFor = (r) => `<b>${hourLabel(r.hour)}–${String(r.hour).padStart(2, "0")}:59</b>` +
-      [["Calls", num(r.calls)], ["At the same time (most)", num(r.at_once)], ["Caller waits: typical", secs(r.wait_median)], ["Caller waits: slowest 5%", secs(r.wait_p95)],
-       ...STAGE_PARTS.map((p) => [p.name, secs(r.stages[p.k])]), ["Slow turns", num(r.slow_turns)], ["Tokens", num(r.tokens)], ["Typical call length", dur(r.duration_median)]]
-        .map(([k, v]) => `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
+    const rows = (r, list) => `<b>${hourLabel(r.hour)}–${String(r.hour).padStart(2, "0")}:59</b>` +
+      list.map(([k, v]) => `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
+    const tipFor = (r) => rows(r, [["Calls", num(r.calls)], ["Most at the same time", num(r.at_once)], ["Typical call length", dur(r.duration_median)]]);
+    const stageTip = (r) => rows(r, [["Caller waits (typical)", secs(r.wait_median)], ...STAGE_PARTS.map((p) => [p.name, secs(r.stages[p.k])])]);
     const series = (f) => H.map((r) => ({ label: String(r.hour), weekday: "", date: r.hour, value: f(r) || 0, r }));
     const opt = (name, label, color) => ({ name, label, color, tip: (x) => tipFor(x.r), empty: "No calls." });
     dayBars($("#hrCalls"), series((r) => r.calls), opt("Calls", "Calls per hour", "--s2"));
     dayBars($("#hrAtOnce"), series((r) => r.at_once), opt("At the same time", "Most calls at the same time, per hour", "--serious"));
-    dayBars($("#hrTokens"), series((r) => r.tokens), opt("Tokens", "Tokens per hour", "--s1"));
-    dayBars($("#hrLength"), series((r) => r.duration_median), opt("Typical call length", "Typical call length per hour", "--h4"));
     stackBars($("#hrStages"), H.map((r) => ({ label: String(r.hour), values: r.stages, r })), STAGE_PARTS,
-      { label: "Where the caller's wait goes, per hour", tip: (x) => tipFor(x.r), empty: "No turn timings recorded for these calls." });
+      { label: "Where the caller's wait goes, per hour", tip: (x) => stageTip(x.r), empty: "No turn timings recorded for these calls." });
 
     // the bottleneck, in words
     const lines = [];
@@ -366,14 +435,14 @@
     badge.title = d.overdue ? `${d.overdue} callback(s) overdue` : "";
     const whenPill = { overdue: '<span class="pill crit">Overdue</span>', today: '<span class="pill warn">Today</span>',
       later: '<span class="pill">Later</span>', none: '<span class="pill">No time set</span>' };
-    $("#fuGroups").innerHTML = d.groups.map((g) => `<div class="fu-group"><h3>${esc(g.label)} <span class="pill ${g.count ? (g.key === "callback" && d.overdue ? "crit" : "warn") : "good"}">${num(g.count)}</span></h3>
-      <div class="hint">${esc(g.hint)}${g.count > g.items.length ? ` Showing the first ${g.items.length}.` : ""}</div>
+    $("#fuGroups").innerHTML = d.groups.map((g) => `<div class="fu-group"><div class="fu-head"><h3>${esc(g.label)}</h3><span class="pill ${g.count ? (g.key === "callback" && d.overdue ? "crit" : "warn") : "good"}">${num(g.count)}</span></div>
+      <p class="fu-hint">${esc(g.hint)}${g.count > g.items.length ? ` Showing the first ${g.items.length}.` : ""}</p>
       ${g.items.length ? `<div class="tbl-wrap"><table><thead><tr><th>Client</th><th>Number</th>${g.key === "callback" ? "<th>Due</th>" : ""}<th>Last call</th><th>Result</th>${admin ? "<th>Summary</th>" : ""}</tr></thead><tbody>${g.items.map((x) => `<tr class="click" tabindex="0" data-vcall="${esc(x.call_id)}">
         <td>${admin && x.name ? `<b>${esc(x.name)}</b><br><span class="muted num">${esc(x.lead_id)}</span>` : `<span class="num">${esc(x.lead_id)}</span>`}</td>
         <td class="num muted">${esc(x.number || "–")}</td>
         ${g.key === "callback" ? `<td>${whenPill[x.when] || ""} <span class="num">${x.due ? esc(when(x.due)) : admin && x.callback_text ? `“${esc(x.callback_text)}”` : ""}</span></td>` : ""}
         <td class="num muted">${esc(when(x.last_ts))}</td><td>${esc(x.last_label)}${x.interest ? ` <span class="pill ${x.interest === "hot" ? "crit" : ""}">${esc(x.interest)}</span>` : ""}</td>
-        ${admin ? `<td class="muted">${esc(x.summary || "–")}</td>` : ""}</tr>`).join("")}</tbody></table></div>` : '<div class="muted">Nobody right now.</div>'}</div>`).join("");
+        ${admin ? `<td class="muted">${esc(x.summary || "–")}</td>` : ""}</tr>`).join("")}</tbody></table></div>` : '<p class="fu-empty">Nobody right now.</p>'}</div>`).join("");
   }
 
   // ---------- calls grouped by client ----------
@@ -462,9 +531,14 @@
       : adminOnly("The conversation is");
 
     // ---- CRM ----
+    const crmFields = (x) => {
+      if (admin && x.changed && Object.keys(x.changed).length) return `<div class="list">${Object.entries(x.changed).map(([k, v]) =>
+        `<div class="li"><div>${esc(LEAD_FIELDS[k] || human(k))}</div><span class="chg"><span class="muted">${esc(v.before ?? "–")}</span> → <b>${esc(v.after ?? "–")}</b></span></div>`).join("")}</div>`;
+      const f = (x.fields || []).map((k) => LEAD_FIELDS[k] || human(k));
+      return `<div class="muted">${esc(f.length ? f.join(", ") : "No fields changed.")}</div>`;
+    };
     let crmHtml = crm.length
-      ? `<div class="tbl-wrap"><table><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Fields</th><th>Result</th></tr></thead><tbody>` +
-        crm.map((x) => `<tr><td class="num muted">${esc((x.ts || "").slice(11, 19))}</td><td>${x.source === "post_call" ? "Post-call check" : "Agent, during the call"}</td><td>${esc(x.action || "")}</td><td>${admin && x.changed ? Object.entries(x.changed).map(([k, v]) => `${esc(LEAD_FIELDS[k] || k)}: <span class="muted">${esc(v.before ?? "–")}</span> → <b>${esc(v.after ?? "–")}</b>`).join("<br>") : esc((x.fields || []).map((f) => LEAD_FIELDS[f] || f).join(", ") || "–")}</td><td>${x.ok ? '<span class="pill good">Saved</span>' : `<span class="pill crit">Failed</span>${admin && x.error ? ` ${esc(x.error)}` : ""}`}</td></tr>`).join("") + `</tbody></table></div>` + (admin ? "" : adminOnly("The values before and after are"))
+      ? `<div class="crm-list">${crm.map((x) => `<div class="crm-item"><div class="crm-head"><span class="num muted">${esc((x.ts || "").slice(11, 19))}</span><b>${esc(human(x.action || "change"))}</b><span class="muted">${x.source === "post_call" ? "Post-call check" : "Agent, during the call"}</span>${x.ok ? '<span class="pill good">Saved</span>' : '<span class="pill crit">Failed</span>'}</div>${crmFields(x)}${!x.ok && admin && x.error ? `<div class="note">${esc(x.error)}</div>` : ""}</div>`).join("")}</div>` + (admin ? "" : adminOnly("The values before and after are"))
       : `<div class="note">No CRM changes were logged for this call.</div>`;
     if (admin && Object.keys(c.filled_after_call || {}).length) crmHtml += `<div class="block"><h4>Filled in after the call</h4><div class="code">${esc(Object.entries(c.filled_after_call).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
     if (admin && (c.disagreements || []).length) crmHtml += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
@@ -504,18 +578,6 @@
       { id: "tech", label: c.error_count ? `Technical (${c.error_count} error${c.error_count > 1 ? "s" : ""})` : "Technical", html: tech },
     ]));
   }
-  async function openSpeechRun(id) {
-    const r = await api(`/api/speech/run?id=${encodeURIComponent(id)}`);
-    const admin = state.me.role === "admin";
-    const s = r.summary || {};
-    $("#dTitle").textContent = r.mode === "recordings" ? "Speech test: real recordings" : "Speech test: round trip";
-    $("#dMeta").innerHTML = [when(r.run_at), `STT ${r.models.stt || "?"}`, r.models.tts && `TTS ${r.models.tts}`, r.language].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
-    let b = `<div class="d-sum"><div><span>Accuracy</span><b>${pct(s.accuracy, 1)}</b></div><div><span>Key terms</span><b>${pct(s.key_term_accuracy, 1)}</b></div><div><span>Word error rate</span><b>${pct(s.wer, 1)}</b></div><div><span>Verdict</span><b>${esc(s.verdict || "–")}</b></div></div>`;
-    b += `<div class="block"><h4>Worst first</h4><div class="tbl-wrap"><table><thead><tr><th>Item</th><th class="r">WER</th>${admin ? "<th>Said</th><th>Heard</th><th>Missed</th>" : ""}</tr></thead><tbody>` +
-      r.items.map((i) => `<tr><td class="num">${esc(i.id)}</td><td class="r num">${pct(i.wer)}</td>${admin ? `<td class="q">${esc(i.reference)}</td><td class="q">${esc(i.transcript)}</td><td>${esc((i.missed_key_terms || []).join(", "))}</td>` : ""}</tr>`).join("") + `</tbody></table></div></div>`;
-    openDrawer(b);
-  }
-
   async function renderLogins() {
     const d = await api(`/api/whatsapp/logins?range=${state.range}`);
     $("#lgKpis").innerHTML = [
@@ -615,7 +677,7 @@
   $$(".nav button").forEach((b) => b.addEventListener("click", () => go(b.dataset.page)));
   $("#range").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    state.range = b.dataset.range; state.wa.offset = 0;
+    state.range = b.dataset.range; state.wa.offset = 0; state.we.offset = 0;
     $$("#range button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     go(state.page);
   });
@@ -671,14 +733,26 @@
     state.wa.offset = Math.max(0, state.wa.offset + Number(b.dataset.p) * 25);
     renderQuestions().catch(showError);
   });
+  $("#weFilters").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-kind]"); if (!b) return;
+    state.we.kind = b.dataset.kind; state.we.offset = 0;
+    $$("#weFilters button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    renderErrorRows().catch(showError);
+  });
+  $("#wePager").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-p]"); if (!b || b.disabled) return;
+    state.we.offset = Math.max(0, state.we.offset + Number(b.dataset.p) * 25);
+    renderErrorRows().catch(showError);
+  });
   document.addEventListener("click", (e) => {
+    const er = e.target.closest("tr[data-err]"); if (er) openError(er.dataset.err).catch(showError);
     const q = e.target.closest("tr[data-q]"); if (q) openQuestion(q.dataset.q).catch(showError);
     const vc = e.target.closest("tr[data-vcall]"); if (vc) openVoiceCall(vc.dataset.vcall).catch(showError);
     const cl = e.target.closest("tr[data-client]"); if (cl) openClient(cl.dataset.client).catch(showError);
-    const sr = e.target.closest("button[data-speech]"); if (sr) openSpeechRun(sr.dataset.speech).catch(showError);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+    const er = e.target.closest && e.target.closest("tr[data-err]"); if (er) openError(er.dataset.err).catch(showError);
     const q = e.target.closest && e.target.closest("tr[data-q]"); if (q) openQuestion(q.dataset.q).catch(showError);
     const vc = e.target.closest && e.target.closest("tr[data-vcall]"); if (vc) openVoiceCall(vc.dataset.vcall).catch(showError);
     const cl = e.target.closest && e.target.closest("tr[data-client]"); if (cl) openClient(cl.dataset.client).catch(showError);

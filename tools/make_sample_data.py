@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS qa_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT
   role TEXT, question TEXT, answer TEXT, sources TEXT, model TEXT, cost_usd REAL, elapsed_ms INTEGER, ip TEXT);
 CREATE TABLE IF NOT EXISTS auth_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, identity TEXT,
   success INTEGER, ip TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS error_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT NOT NULL,
+  source TEXT, message TEXT, detail TEXT, user_id TEXT, name TEXT, question TEXT, path TEXT, ip TEXT);
 """
 CONV_SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
@@ -108,6 +110,22 @@ def make_whatsapp(folder: str, rnd: random.Random, now: datetime) -> None:
             for k in range(rnd.randint(1, 6)):
                 audit.execute("INSERT INTO auth_log (ts,identity,success,ip,reason) VALUES (?,?,?,?,?)",
                               (iso(date.replace(hour=3, minute=10 + k)), "+971500000000", 0, "203.0.113.7", "bad_code"))
+    errors = [
+        ("tool_error", "crm_search", "INVALID_QUERY: the field Booking_Date is not searchable", "Zoho CRM"),
+        ("tool_error", "crm_aggregate", "LIMIT_EXCEEDED: COQL query returned more than 2000 rows", "Zoho CRM"),
+        ("tool_error", "books_report", "Zoho Books: token refresh failed (HTTP 400)", "Zoho Books"),
+        ("tool_error", "mename_leave_query", "MenaMe connection error: DPY-6005 cannot connect to database", "MenaMe HR"),
+        ("claude_api", "chat", "OverloadedError: Error code: 529 - overloaded", ""),
+        ("cut_off", "claude", "The answer hit the 4096-token limit (claude-sonnet-4-6).", ""),
+        ("round_limit", "orchestrator", "No usable answer after 10 research rounds (claude-sonnet-4-6).", ""),
+        ("server", "/conversations", "OperationalError: database is locked", ""),
+    ]
+    rows = audit.execute("SELECT ts, user_id, name, question, ip FROM qa_log").fetchall()
+    for ts, uid, name, q, ip in rnd.sample(rows, min(len(rows), 40)):
+        kind, source, msg, system = rnd.choice(errors)
+        detail = json.dumps({"system": system, "input": {"module": "Deals"}}) if kind == "tool_error" else "Traceback (most recent call last): ..."
+        audit.execute("INSERT INTO error_log (ts,kind,source,message,detail,user_id,name,question,path,ip) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (ts, kind, source, msg, detail, uid, name, q, "/chat", ip))
     audit.commit(); conv.commit(); audit.close(); conv.close()
 
 

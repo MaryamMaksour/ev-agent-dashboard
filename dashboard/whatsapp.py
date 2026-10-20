@@ -1,7 +1,9 @@
 """Reads what the WhatsApp data agent (ev-proto) already saves. READ-ONLY: never writes to its files.
 
-  logs/audit.db          qa_log   - one row per answered question (user, question, answer, sources, model, cost, time)
-                         auth_log - one row per login attempt
+  logs/audit.db          qa_log    - one row per answered question (user, question, answer, sources, model, cost, time)
+                         auth_log  - one row per login attempt
+                         error_log - one row per error while serving someone (added with the error logging update;
+                                     older ev-proto versions don't have it, and the Errors tab says so)
   logs/conversations.db  conversations + messages - per-user chat history
 
 Phase 0 has no "answer type" or "confident" field (ev-proto computes them but doesn't save them yet), so the
@@ -48,6 +50,21 @@ OUTCOMES = {
     "off_topic": "Off topic",
     "other": "Chat or no sources saved",
 }
+
+# error_log.kind -> what the dashboard calls it, and what it usually means
+ERROR_KINDS = {
+    "tool_error": ("Data system said no", "Zoho or MenaMe rejected the request: wrong field or filter, token or connection trouble"),
+    "tool_crash": ("Tool crashed", "The code that talks to Zoho or MenaMe raised an error"),
+    "claude_api": ("Claude API error", "Rate limit, overloaded, timeout or a bad key. The person got an error"),
+    "cut_off": ("Answer cut off", "The answer hit the token limit; the person got 'couldn't finish'"),
+    "round_limit": ("Too many steps", "No usable answer after the research limit; the person got 'couldn't finish'"),
+    "server": ("App crashed", "Something else in the app failed"),
+}
+
+
+def _error_label(kind: str) -> str:
+    return ERROR_KINDS.get(kind, (kind or "Other",))[0]
+
 
 _ARABIC = re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿ]")
 _DOUBT = re.compile(r"are you sure|double[- ]?check|check again|is that (all|right|correct)|really\?|"
@@ -145,6 +162,75 @@ class WhatsAppSource:
             out.append({"id": r["id"], "ts": ts, "identity": r["identity"] or "?", "success": bool(r["success"]),
                         "ip": r["ip"] or "", "reason": r["reason"] or ""})
         return out
+
+    def errors(self, days: Optional[int] = None, now: Optional[datetime] = None) -> list:
+        start = m.since(days, now)
+        params: tuple = ()
+        where = ""
+        if start:
+            where = "WHERE ts >= ?"
+            params = (start.astimezone(timezone.utc).isoformat(),)
+        raw = self._rows(self.audit_path, "error_log",
+                         "SELECT id, ts, kind, source, message, detail, user_id, name, question, path, ip "
+                         f"FROM error_log {where} ORDER BY id", params)
+        out = []
+        for r in raw:
+            ts = m.parse_ts(r["ts"])
+            if ts is None or (start and ts < start):
+                continue
+            system = ""
+            if r["kind"] == "tool_error":
+                try:
+                    system = (json.loads(r["detail"] or "{}") or {}).get("system") or ""
+                except (TypeError, ValueError, AttributeError):
+                    system = ""
+            out.append({"id": r["id"], "ts": ts, "kind": r["kind"] or "other", "source": r["source"] or "",
+                        "message": r["message"] or "", "detail": r["detail"] or "", "user_id": r["user_id"] or "",
+                        "name": r["name"] or r["user_id"] or "", "question": r["question"] or "",
+                        "path": r["path"] or "", "ip": r["ip"] or "", "system": system})
+        return out
+
+    def error_log_exists(self) -> bool:
+        if not os.path.isfile(self.audit_path):
+            return False
+        with closing(_connect(self.audit_path)) as conn:
+            return _table_exists(conn, "error_log")
+
+    def error_summary(self, days: Optional[int], now: Optional[datetime] = None) -> dict:
+        rows = self.errors(days, now)
+        kinds = Counter(r["kind"] for r in rows)
+        asked = len(self.questions(days, now)) if rows else 0
+        hit = {(r["user_id"], r["question"]) for r in rows if r["question"]}
+        return {
+            "available": self.error_log_exists(),
+            "totals": {
+                "errors": len(rows),
+                "people": len({r["user_id"] for r in rows if r["user_id"]}),
+                "questions": len(hit),
+                "question_share": round(len(hit) / asked, 3) if asked else None,
+                "last": m.iso(max((r["ts"] for r in rows), default=None)),
+            },
+            "per_day": m.day_series(rows, self.tz, days, now=now),
+            "by_kind": [{"key": k, "label": _error_label(k), "hint": ERROR_KINDS.get(k, ("", ""))[1], "count": v}
+                        for k, v in kinds.most_common()],
+            "by_source": m.top(Counter(r["source"] or "unknown" for r in rows), 10),
+            "by_system": m.top(Counter(r["system"] for r in rows if r["system"]), 5),
+            "kinds": {k: v[0] for k, v in ERROR_KINDS.items()},
+        }
+
+    def error_list(self, days: Optional[int], *, show_text: bool, kind: str = "", limit: int = 25, offset: int = 0,
+                   now: Optional[datetime] = None) -> dict:
+        rows = self.errors(days, now)
+        if kind:
+            rows = [r for r in rows if r["kind"] == kind]
+        rows.sort(key=lambda r: r["ts"], reverse=True)
+        return {"total": len(rows), "items": [public_error(r, show_text, full=False) for r in rows[offset:offset + limit]]}
+
+    def error(self, eid: int, *, show_text: bool) -> Optional[dict]:
+        for r in self.errors(None):
+            if r["id"] == eid:
+                return public_error(r, show_text, full=True)
+        return None
 
     def conversation_stats(self, days: Optional[int] = None, now: Optional[datetime] = None) -> dict:
         start = m.since(days, now)
@@ -282,6 +368,23 @@ def _mark_followups(rows: list) -> None:
                 prev["doubted"] = True
             elif _similar(prev["question"], nxt["question"]):
                 prev["asked_again"] = True
+
+
+def public_error(r: dict, show_text: bool, full: bool) -> dict:
+    """Type, place and time for everyone. The message, question, tool input, traceback and IP only for admins:
+    they can hold the person's search words or record values."""
+    out = {
+        "id": r["id"], "ts": m.iso(r["ts"]), "kind": r["kind"], "kind_label": _error_label(r["kind"]),
+        "source": r["source"], "system": r["system"], "name": r["name"],
+        "message": r["message"] if show_text else None,
+        "question": r["question"] if show_text else None,
+    }
+    if full:
+        out["kind_hint"] = ERROR_KINDS.get(r["kind"], ("", ""))[1]
+        out["detail"] = r["detail"] if show_text else None
+        out["path"] = r["path"]
+        out["ip"] = r["ip"] if show_text else None
+    return out
 
 
 def public_question(r: dict, show_text: bool, full: bool) -> dict:

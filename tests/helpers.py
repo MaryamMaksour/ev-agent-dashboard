@@ -34,6 +34,19 @@ def make_evproto(folder: str) -> None:
         ts = (NOW - timedelta(minutes=mins)).isoformat()
         a.execute("INSERT INTO qa_log (ts,user_id,name,role,question,answer,sources,model,cost_usd,elapsed_ms,ip) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                   (ts, uid, uid.title(), "user", q, ans, json.dumps(src), model, cost, ms, "10.0.0.5"))
+    a.executescript("""
+    CREATE TABLE error_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT NOT NULL, source TEXT,
+      message TEXT, detail TEXT, user_id TEXT, name TEXT, question TEXT, path TEXT, ip TEXT);
+    """)
+    for mins, kind, source, msg, detail, uid, q in (
+        (50, "tool_error", "crm_search", "INVALID_QUERY (field Booking_Date not searchable)",
+         json.dumps({"system": "Zoho CRM", "input": {"module": "Deals"}}), "omar", "Deals by booking date"),
+        (40, "round_limit", "orchestrator", "No usable answer after 10 research rounds", "", "lina", "List every EOI"),
+        (39, "claude_api", "chat", "RateLimitError: 429", "Traceback ...", "lina", "List every EOI"),
+        (60 * 24 * 40, "server", "/conversations", "OperationalError: database is locked", "", "", ""),
+    ):
+        a.execute("INSERT INTO error_log (ts,kind,source,message,detail,user_id,name,question,path,ip) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                  ((NOW - timedelta(minutes=mins)).isoformat(), kind, source, msg, detail, uid, uid.title(), q, "/chat", "10.0.0.5"))
     for mins, ident, ok in ((70, "sara", 1), (69, "+971500000000", 0), (68, "+971500000000", 0)):
         a.execute("INSERT INTO auth_log (ts,identity,success,ip,reason) VALUES (?,?,?,?,?)",
                   ((NOW - timedelta(minutes=mins)).isoformat(), ident, ok, "203.0.113.7", "" if ok else "bad_code"))
