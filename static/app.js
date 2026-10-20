@@ -602,25 +602,33 @@
   $("#scrim").addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
 
-  // ---------- alerts: banner on every page + the Alerts tab ----------
+  // ---------- alerts: a banner on each agent's page, for that agent only, + its Alerts tab ----------
+  const ALERTS = {
+    calls: { api: "/api/alerts", badge: "#alBadge", list: "#alList", none: "No voice agent data found yet." },
+    whatsapp: { api: "/api/whatsapp/alerts", badge: "#waAlBadge", list: "#waAlList", none: "No WhatsApp agent data found yet." },
+  };
   async function renderAlerts() {
+    const page = state.page, cfg = ALERTS[page], bar = $("#alertBar");
+    if (!cfg) { bar.hidden = true; return; }
     let d;
-    try { d = await api("/api/alerts"); } catch (e) { return; }  // never break a page over the banner
-    const bar = $("#alertBar"), n = d.alerts.length;
-    const b = $("#alBadge"); b.hidden = !n; b.textContent = String(n);
+    try { d = await api(cfg.api); } catch (e) { return; }  // never break a page over the banner
+    if (state.page !== page) return;  // the person moved on while it loaded
+    const n = d.alerts.length;
+    const b = $(cfg.badge); b.hidden = !n; b.textContent = String(n);
     if (!n) { bar.hidden = true; } else {
       bar.hidden = false;
       bar.className = "alert-bar" + (d.crit ? "" : " warn");
       bar.innerHTML = `<b>${n} alert${n > 1 ? "s" : ""}</b><span>${d.alerts.slice(0, 3).map((a) => esc(a.title)).join(" · ")}${n > 3 ? " · …" : ""}</span><button type="button" id="alertGo">View</button>`;
     }
     const level = { crit: '<span class="pill crit">Now</span>', warn: '<span class="pill warn">Look</span>' };
-    $("#alList").innerHTML = n ? d.alerts.map((a) => `<div class="al-item"><div>${level[a.level] || ""}</div><div><b>${esc(a.title)}</b>${a.since ? ` <span class="muted num">· ${esc(when(a.since))}</span>` : ""}
+    $(cfg.list).innerHTML = n ? d.alerts.map((a) => `<div class="al-item"><div>${level[a.level] || ""}</div><div><b>${esc(a.title)}</b>${a.since ? ` <span class="muted num">· ${esc(when(a.since))}</span>` : ""}
       <div class="what">${esc(a.detail)}</div><div class="todo">What to do: ${esc(a.action)}</div></div></div>`).join("")
-      : `<div class="note">${d.found ? "No alerts. Everything checked looks fine." : "No voice agent data found yet."}</div>`;
+      : `<div class="note">${d.found ? "No alerts. Everything checked looks fine." : cfg.none}</div>`;
   }
   $("#alertBar").addEventListener("click", (e) => {
     if (!e.target.closest("#alertGo")) return;
-    state.tab.calls = "alerts"; go("calls");
+    if (!ALERTS[state.page]) return;
+    state.tab[state.page] = "alerts"; go(state.page);
   });
 
   // ---------- compliance, blocked dials, health, retention (Quality tab) ----------

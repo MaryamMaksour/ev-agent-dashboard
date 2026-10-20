@@ -82,6 +82,7 @@
         <button role="tab" data-tab="questions" aria-selected="false">Questions</button>
         <button role="tab" data-tab="errors" aria-selected="false">Errors <span class="badge" id="waErrBadge" hidden></span></button>
         <button role="tab" data-tab="feedback" aria-selected="false">Feedback</button>
+        <button role="tab" data-tab="alerts" aria-selected="false">Alerts <span class="badge" id="waAlBadge" hidden></span></button>
       </div>
       <div class="panel" data-panel="summary">
         <div class="kpis" id="waKpis"></div>
@@ -143,6 +144,9 @@
           <div class="pager" id="wePager"></div>
         </div>
         </div>
+      </div>
+      <div class="panel" data-panel="alerts" hidden>
+        <div class="card"><h2>Alerts</h2><div class="hint">Checked over the last 24 hours from the questions, errors and logins the agent saves. Red needs action now; yellow needs a look.</div><div id="waAlList"></div></div>
       </div>
       <div class="panel" data-panel="feedback" hidden>
         <div class="card">

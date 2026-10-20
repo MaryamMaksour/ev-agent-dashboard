@@ -60,6 +60,11 @@ class Settings:
     voice_alert_error_rate: float = 0.10      # alert when more than this share of the last 24 h's calls had an error
     voice_alert_wait_seconds: float = 1.5     # alert when the typical caller wait (last 24 h) is above this
     voice_alert_quiet_hours: float = 6.0      # alert when there has been no call for this long (0 = off)
+    wa_alert_error_rate: float = 0.10         # WhatsApp: alert when more than this share of the last 24 h's questions hit an error
+    wa_alert_unanswered_rate: float = 0.25    # WhatsApp: alert when more than this share couldn't be answered or failed
+    wa_alert_wait_seconds: float = 10.0       # WhatsApp: alert when the typical answer time (last 24 h) is above this
+    wa_alert_quiet_hours: float = 24.0        # WhatsApp: alert when nobody asked for this long on a workday (0 = off)
+    wa_alert_failed_logins: int = 10          # WhatsApp: alert when one person or address failed to log in this often in 24 h
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -88,6 +93,11 @@ class Settings:
             voice_alert_error_rate=float(e("VOICE_ALERT_ERROR_RATE", "0.10")),
             voice_alert_wait_seconds=float(e("VOICE_ALERT_WAIT_SECONDS", "1.5")),
             voice_alert_quiet_hours=float(e("VOICE_ALERT_QUIET_HOURS", "6")),
+            wa_alert_error_rate=float(e("WA_ALERT_ERROR_RATE", "0.10")),
+            wa_alert_unanswered_rate=float(e("WA_ALERT_UNANSWERED_RATE", "0.25")),
+            wa_alert_wait_seconds=float(e("WA_ALERT_WAIT_SECONDS", "10")),
+            wa_alert_quiet_hours=float(e("WA_ALERT_QUIET_HOURS", "24")),
+            wa_alert_failed_logins=int(e("WA_ALERT_FAILED_LOGINS", "10")),
         )
 
     @property

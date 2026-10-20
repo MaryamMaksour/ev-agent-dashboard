@@ -129,7 +129,7 @@ class ServerTests(unittest.TestCase):
     def test_pages_and_api(self):
         _, admin = self.login("admin", "admin-password-1")
         for path in ("/api/me", "/api/status", "/api/overview?range=all", "/api/whatsapp/summary?range=7",
-                     "/api/whatsapp/logins?range=all", "/api/whatsapp/errors?range=all", "/api/whatsapp/errorlist?range=30&kind=tool_error", "/api/voice/runs", "/api/voice/run?id=20261015-101500",
+                     "/api/whatsapp/logins?range=all", "/api/whatsapp/errors?range=all", "/api/whatsapp/alerts", "/api/whatsapp/errorlist?range=30&kind=tool_error", "/api/voice/runs", "/api/voice/run?id=20261015-101500",
                      "/api/voicecalls/summary?range=all", "/api/speech/run?id=20261016T080000-round_trip",
                      "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000",
                      "/api/voicecalls/hours?range=all", "/api/voicecalls/hours?range=all&day=2026-10-16",

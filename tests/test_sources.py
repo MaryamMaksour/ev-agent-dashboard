@@ -117,6 +117,22 @@ class WhatsAppTests(unittest.TestCase):
         self.assertFalse(s["available"])
         self.assertEqual(s["totals"]["errors"], 0)
 
+    def test_alerts(self):
+        from datetime import timedelta
+        from dashboard.whatsapp import AlertSettings
+        keys = lambda src, now=NOW: {a["key"]: a["level"] for a in src.alerts(now)["alerts"]}
+        # 7 questions in the last day: below the 10 needed for the answer checks; 2 of 7 hit an error (> 10 %)
+        self.assertEqual(keys(self.src), {"wa_error_rate": "crit"})
+        strict = WhatsAppSource(self.tmp.name, UAE, AlertSettings(failed_logins=2))
+        self.assertEqual(keys(strict)["wa_logins"], "crit")
+        # Monday, 3 days after the last question: nobody asked on a workday
+        later = keys(self.src, NOW + timedelta(days=3))
+        self.assertEqual(later, {"wa_quiet": "warn"})
+        # Saturday: the weekend is quiet on purpose
+        self.assertNotIn("wa_quiet", keys(self.src, NOW + timedelta(days=1, hours=2)))
+        missing = WhatsAppSource(os.path.join(self.tmp.name, "nope"), UAE)
+        self.assertEqual(missing.alerts(NOW), {"alerts": [], "crit": 0, "warn": 0, "found": False})
+
     def test_missing_folder_is_not_an_error(self):
         src = WhatsAppSource(os.path.join(self.tmp.name, "nope"), UAE)
         self.assertEqual(src.summary(30, NOW)["totals"]["questions"], 0)

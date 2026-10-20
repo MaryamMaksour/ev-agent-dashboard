@@ -19,7 +19,7 @@ from .settings import Settings
 from .voice import VoiceTestSource, public_call
 from .voice_calls import VoiceCallSource
 from .voice_calls import public_call as public_voice_call
-from .whatsapp import OUTCOMES, WhatsAppSource
+from .whatsapp import OUTCOMES, AlertSettings, WhatsAppSource
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 STATIC_FILES = {"app.css", "app.js", "login.css", "login.js"}
@@ -43,7 +43,10 @@ class App:
         self.users = UserStore(settings.users_file)
         self.sessions = Sessions(settings.secret_key, settings.session_hours)
         self.limiter = LoginLimiter()
-        self.whatsapp = WhatsAppSource(settings.evproto_logs_dir, settings.tz)
+        self.whatsapp = WhatsAppSource(settings.evproto_logs_dir, settings.tz, AlertSettings(
+            error_rate=settings.wa_alert_error_rate, unanswered_rate=settings.wa_alert_unanswered_rate,
+            wait_seconds=settings.wa_alert_wait_seconds, quiet_hours=settings.wa_alert_quiet_hours,
+            failed_logins=settings.wa_alert_failed_logins))
         self.voice = VoiceTestSource(settings.voice_runs_dir, settings.tz, settings.voice_log_tz)
         self.voice_calls = VoiceCallSource(settings.voice_agent_data_dir, settings.tz, settings.voice_cache_seconds, costs={
             "gpu_month": settings.voice_gpu_cost_aed_month, "other_month": settings.voice_other_cost_aed_month,
@@ -249,6 +252,8 @@ def make_handler(app: App):
                 if admin:
                     app.access_log("view_question", username=user["username"], question_id=qid)
                 return self.json(200, item)
+            if path == "/api/whatsapp/alerts":
+                return self.json(200, app.whatsapp.alerts())
             if path == "/api/whatsapp/errors":
                 return self.json(200, app.whatsapp.error_summary(days))
             if path == "/api/whatsapp/errorlist":

@@ -196,6 +196,11 @@ RUN_SCALE_TEST=1 python -m unittest tests.test_scale -v
 | `VOICE_ALERT_ERROR_RATE` | 0.10 | Alert when more than 10 % of the last 24 hours' calls had an error |
 | `VOICE_ALERT_WAIT_SECONDS` | 1.5 | Alert when the typical caller wait in the last 24 hours is above this |
 | `VOICE_ALERT_QUIET_HOURS` | 6 | Alert when there has been no call for this long (0 = off; calls run 24/7) |
+| `WA_ALERT_ERROR_RATE` | 0.10 | WhatsApp: alert when more than 10 % of the last 24 hours' questions hit an error |
+| `WA_ALERT_UNANSWERED_RATE` | 0.25 | WhatsApp: alert when more than 25 % got "couldn't answer" or "couldn't finish" |
+| `WA_ALERT_WAIT_SECONDS` | 10 | WhatsApp: alert when the typical answer time in the last 24 hours is above this |
+| `WA_ALERT_QUIET_HOURS` | 24 | WhatsApp: alert when nobody asked for this long on a workday (0 = off; weekends are skipped) |
+| `WA_ALERT_FAILED_LOGINS` | 10 | WhatsApp: alert when one person or address failed to log in this many times in 24 hours |
 | `VOICE_CACHE_SECONDS` | 15 | The list of voice calls is reused for this long, so a page loads fast with tens of thousands of calls. New calls show up within this time. |
 
 ## Layout

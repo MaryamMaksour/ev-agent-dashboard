@@ -18,6 +18,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
+from dataclasses import dataclass
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -98,10 +99,20 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
+@dataclass
+class AlertSettings:
+    error_rate: float = 0.10
+    unanswered_rate: float = 0.25
+    wait_seconds: float = 10.0
+    quiet_hours: float = 24.0
+    failed_logins: int = 10
+
+
 class WhatsAppSource:
-    def __init__(self, logs_dir: str, tz) -> None:
+    def __init__(self, logs_dir: str, tz, alert_settings: Optional[AlertSettings] = None) -> None:
         self.logs_dir = logs_dir
         self.tz = tz
+        self.alert_settings = alert_settings or AlertSettings()
         self.audit_path = os.path.join(logs_dir, "audit.db")
         self.conv_path = os.path.join(logs_dir, "conversations.db")
 
@@ -231,6 +242,81 @@ class WhatsAppSource:
             if r["id"] == eid:
                 return public_error(r, show_text, full=True)
         return None
+
+    def alerts(self, now: Optional[datetime] = None) -> dict:
+        """Checks over the last 24 hours. Counts only, never names or question text, so viewers can see them too."""
+        now = now or datetime.now(timezone.utc)
+        s = self.alert_settings
+        out: list = []
+
+        def add(key, level, title, detail, action, since=None):
+            out.append({"key": key, "level": level, "title": title, "detail": detail, "action": action,
+                        "since": m.iso(since) if isinstance(since, datetime) else since})
+
+        if not os.path.isfile(self.audit_path):
+            return {"alerts": [], "crit": 0, "warn": 0, "found": False}
+        day = self.questions(1, now)
+        n = len(day)
+
+        if self.error_log_exists():
+            errs = self.errors(1, now)
+            hit = {(r["user_id"], r["question"]) for r in errs if r["question"]}
+            if n >= 5 and len(hit) / n > s.error_rate:
+                add("wa_error_rate", "crit", "Many questions hit an error",
+                    f"{len(hit)} of {n} questions in the last 24 hours hit an error ({len(hit) / n:.0%}).",
+                    "Open WhatsApp agent → Errors to see what went wrong and where.")
+            api = [r for r in errs if r["kind"] == "claude_api"]
+            if len(api) >= 3:
+                add("wa_claude_api", "crit", "Claude API errors",
+                    f"{len(api)} Claude API errors in the last 24 hours (rate limit, overloaded, timeout or key).",
+                    "Check the Anthropic status page and the API key and usage limits in the Anthropic console.",
+                    api[-1]["ts"])
+            systems = Counter(r["system"] for r in errs if r["system"])
+            if systems:
+                system, count = systems.most_common(1)[0]
+                if count >= 5:
+                    add("wa_system", "warn", f"{system} keeps refusing requests",
+                        f"{count} requests to {system} failed in the last 24 hours.",
+                        f"Open Errors and filter by 'Data system said no'. Check the {system} token or connection.")
+
+        unanswered = [r for r in day if r["outcome"] in ("no_answer", "failed")]
+        if n >= 10 and len(unanswered) / n > s.unanswered_rate:
+            add("wa_unanswered", "warn", "Many questions not answered",
+                f"{len(unanswered)} of {n} questions in the last 24 hours got 'couldn't answer' or 'couldn't finish' "
+                f"({len(unanswered) / n:.0%}).",
+                "Open Questions and filter by Couldn't answer / Failed to finish to see which ones.")
+
+        typical = m.percentile([r["seconds"] for r in day], 0.5)
+        if n >= 10 and typical and typical > s.wait_seconds:
+            add("wa_slow", "warn", "Answers are slow",
+                f"Typical answer time in the last 24 hours is {typical:.1f} s (target {s.wait_seconds:.0f} s).",
+                "Open People & models to see which model is slow; check Zoho and MenaMe response times.")
+
+        last = self._rows(self.audit_path, "qa_log", "SELECT ts FROM qa_log ORDER BY ts DESC LIMIT 1")
+        last_ts = m.parse_ts(last[0]["ts"]) if last else None
+        workday = now.astimezone(self.tz).weekday() < 5  # Saturday and Sunday are the UAE weekend
+        if s.quiet_hours and last_ts and workday and now - last_ts > timedelta(hours=s.quiet_hours):
+            add("wa_quiet", "warn", "No questions",
+                f"The last question was {(now - last_ts).total_seconds() / 3600:.0f} hours ago.",
+                "Check that the WhatsApp agent is running and that people can log in.", last_ts)
+
+        fails = [r for r in self.logins(1, now) if not r["success"]]
+        worst = max([*Counter(r["identity"] for r in fails).values(), *Counter(r["ip"] for r in fails).values(), 0])
+        if worst >= s.failed_logins:
+            add("wa_logins", "crit", "Possible password guessing",
+                f"{len(fails)} failed logins in the last 24 hours, {worst} from the same person or address.",
+                "Open Security → Logins (admins) to see who and from where; block the address if it isn't staff.")
+
+        today = sum(r["cost_aed"] for r in day)
+        before = self.questions(15, now)
+        past = sum(r["cost_aed"] for r in before if r["ts"] < now - timedelta(days=1)) / 14
+        if today > 10 and past and today > 3 * past:
+            add("wa_cost", "warn", "Cost jump",
+                f"The last 24 hours cost AED {today:,.2f}, more than 3 times the daily average (AED {past:,.2f}).",
+                "Open People & models to see who asked the most and which model answered.")
+
+        crit = sum(a["level"] == "crit" for a in out)
+        return {"alerts": out, "crit": crit, "warn": len(out) - crit, "found": True}
 
     def conversation_stats(self, days: Optional[int] = None, now: Optional[datetime] = None) -> dict:
         start = m.since(days, now)
