@@ -614,8 +614,8 @@ class VoiceCallSource:
             "slowest_stage": [{"label": k, "count": v} for k, v in slow.most_common()],
             "line_results": [{"key": k, "label": LINE.get(k, k), "count": v}
                              for k, v in Counter(c["line_result"] for c in cs).most_common()],
-            "classification": [{"label": k, "count": v}
-                               for k, v in Counter(c["classification_label"] for c in cs).most_common()],
+            "classification": [{"key": k, "label": CLASSIFICATION.get(k, k or "Unknown"), "count": v}
+                               for k, v in Counter(c["classification"] for c in cs).most_common()],
             "ended_by": [{"label": k, "count": v} for k, v in Counter(c["ended_by_label"] for c in cs).most_common()],
             "by_model": sorted([{
                 "model": mo, "served_by": server or None, "calls": len(v),

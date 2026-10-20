@@ -80,6 +80,8 @@
         <button role="tab" data-tab="summary" aria-selected="true">Summary</button>
         <button role="tab" data-tab="people" aria-selected="false">People &amp; models</button>
         <button role="tab" data-tab="questions" aria-selected="false">Questions</button>
+        <button role="tab" data-tab="errors" aria-selected="false">Errors <span class="badge" id="waErrBadge" hidden></span></button>
+        <button role="tab" data-tab="feedback" aria-selected="false">Feedback</button>
       </div>
       <div class="panel" data-panel="summary">
         <div class="kpis" id="waKpis"></div>
@@ -115,6 +117,44 @@
           <div class="pager" id="waPager"></div>
         </div>
       </div>
+      <div class="panel" data-panel="errors" hidden>
+        <div class="card" id="weNote" hidden>
+          <h2>Errors are not saved yet</h2>
+          <div class="hint">The WhatsApp agent doesn't save its errors today. It will start saving them with the next agent update, and they will show here from then on.</div>
+          <ul class="later">
+            <li>Zoho or MenaMe rejected a request (wrong field or filter, token or connection trouble)</li>
+            <li>Claude API errors (rate limit, overloaded, timeout)</li>
+            <li>Answers cut off at the token limit, or given up after too many steps</li>
+            <li>Any other crash in the app</li>
+          </ul>
+        </div>
+        <div id="weBody">
+        <div class="kpis" id="weKpis"></div>
+        <div class="grid">
+          <div class="card c8"><h2>Errors per day</h2><div class="hint">UAE time</div><div class="chart" id="weDay"></div></div>
+          <div class="card c4"><h2>What went wrong</h2><div class="hint">Hover a type for what it usually means</div><div class="bars wide" id="weKinds"></div></div>
+          <div class="card c6"><h2>Where it happened</h2><div class="hint">The tool, or the part of the app</div><div class="bars wide" id="weSources"></div></div>
+          <div class="card c6"><h2>Which data system</h2><div class="hint">For "Data system said no" errors</div><div class="bars wide" id="weSystems"></div></div>
+        </div>
+        <div class="card">
+          <h2>Every error</h2><div class="hint">Newest first. Click one to see the details.</div>
+          <div class="chips" id="weFilters"></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>Type</th><th>Where</th><th>What went wrong</th></tr></thead><tbody id="weRows"></tbody></table></div>
+          <div class="pager" id="wePager"></div>
+        </div>
+        </div>
+      </div>
+      <div class="panel" data-panel="feedback" hidden>
+        <div class="card">
+          <h2>Feedback</h2>
+          <div class="hint">Coming soon. The WhatsApp agent doesn't collect feedback yet.</div>
+          <ul class="later">
+            <li>A 👍 / 👎 under every answer, with an optional comment</li>
+            <li>Here: how many answers people liked, the ones they didn't, and their comments</li>
+            <li>Disliked answers go to a review list, so real mistakes become test questions</li>
+          </ul>
+        </div>
+      </div>
     </section>
 
     <!-- VOICE CALLS (ev-voice-agent) -->
@@ -124,7 +164,7 @@
         <button role="tab" data-tab="followup" aria-selected="false">Follow-up <span class="badge" id="fuBadge" hidden></span></button>
         <button role="tab" data-tab="clients" aria-selected="false">Clients</button>
         <button role="tab" data-tab="busy" aria-selected="false">Busy hours</button>
-        <button role="tab" data-tab="speed" aria-selected="false">Speed</button>
+        <button role="tab" data-tab="speed" aria-selected="false">Technical</button>
         <button role="tab" data-tab="quality" aria-selected="false">Quality</button>
         <button role="tab" data-tab="list" aria-selected="false">Calls</button>
         <button role="tab" data-tab="alerts" aria-selected="false">Alerts <span class="badge" id="alBadge" hidden></span></button>
@@ -132,10 +172,9 @@
       <div class="panel" data-panel="summary">
         <div class="kpis" id="vcKpis"></div>
         <div class="grid">
-          <div class="card c4"><h2>Phone line</h2><div class="hint">What happened when the agent dialled</div><div class="bars wide" id="vcLine"></div></div>
-          <div class="card c4"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript</div><div class="bars wide" id="vcClass"></div></div>
-          <div class="card c4"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div></div>
-          <div class="card c12"><h2>Cost per day</h2><div class="hint" id="vcCostHint"></div><div class="chart" id="vcCostDay"></div></div>
+          <div class="card c12"><h2>How calls were classified</h2><div class="hint">From the post-call check of the transcript. Green and blue are good for sales, red and orange mean stop calling. Hover a slice for its numbers.</div><div id="vcClass"></div></div>
+          <div class="card c6"><h2>Phone line</h2><div class="hint">What happened when the agent dialled</div><div class="bars wide" id="vcLine"></div></div>
+          <div class="card c6"><h2>How calls ended</h2><div class="bars wide" id="vcEnded"></div></div>
         </div>
       </div>
       <div class="panel" data-panel="followup" hidden>
@@ -168,11 +207,9 @@
           <div id="hrBottleneck"></div>
         </div>
         <div class="grid">
-          <div class="card c6"><h2>Calls per hour</h2><div class="hint">When calls started · hover an hour for everything about it</div><div class="chart" id="hrCalls"></div></div>
+          <div class="card c6"><h2>Calls per hour</h2><div class="hint">When calls started · hover an hour for details</div><div class="chart" id="hrCalls"></div></div>
           <div class="card c6"><h2>Calls at the same time</h2><div class="hint">The most calls running together in each hour</div><div class="chart" id="hrAtOnce"></div></div>
           <div class="card c12"><h2>Where the caller's wait goes, per hour</h2><div class="hint">Typical seconds for each step of a turn. The tallest colour is the bottleneck.</div><div class="chart" id="hrStages"></div></div>
-          <div class="card c6"><h2>Tokens per hour</h2><div class="hint">LLM tokens in + out during the calls</div><div class="chart" id="hrTokens"></div></div>
-          <div class="card c6"><h2>Typical call length per hour</h2><div class="hint">Seconds</div><div class="chart" id="hrLength"></div></div>
           <div class="card c12"><h2>Rush hours</h2>
             <div class="hint" id="vcHeatHint"></div>
             <div class="heat" id="vcHeat"></div>
@@ -181,8 +218,9 @@
         </div>
       </div>
       <div class="panel" data-panel="speed" hidden>
+        <div class="kpis" id="vcTechKpis"></div>
         <div class="card"><h2>Waiting for the agent to answer</h2><div class="hint">Every turn: from the caller going quiet to the agent's first audio, and each stage of it</div>
-          <div class="tbl-wrap"><table><thead><tr><th>Stage</th><th class="r">Shortest</th><th class="r">Typical</th><th class="r">Slowest 5%</th><th class="r">Longest</th><th class="r">Turns</th></tr></thead><tbody id="vcStages"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Stage</th><th class="r">Shortest</th><th class="r">Typical</th><th class="r" title="1 turn in 20 was slower than this. It shows the bad moments the typical number hides.">Slowest 1 in 20</th><th class="r">Longest</th><th class="r">Turns</th></tr></thead><tbody id="vcStages"></tbody></table></div>
         </div>
         <div class="grid">
           <div class="card c4"><h2>What slows slow turns</h2><div class="hint" id="vcSlowHint"></div><div class="bars wide" id="vcSlow"></div></div>
@@ -193,11 +231,10 @@
       </div>
       <div class="panel" data-panel="quality" hidden>
         <div class="grid">
-          <div class="card c4"><h2>Errors</h2><div class="hint">Which stage failed. A call can have more than one.</div><div class="bars wide" id="vcErrors"></div></div>
-          <div class="card c4"><h2>Post-call check</h2><div class="hint">After each call the LLM reads the transcript and fills in the CRM</div><div id="vcPost"></div></div>
-          <div class="card c4"><h2>Speech accuracy</h2><div class="hint">Latest run of <span class="num">python -m evals.run_speech</span> in the voice agent</div><div id="vcSpeech"></div></div>
+          <div class="card c6"><h2>Errors</h2><div class="hint">Which stage failed. A call can have more than one.</div><div class="bars wide" id="vcErrors"></div></div>
+          <div class="card c6"><h2>Post-call check</h2><div class="hint">After each call the LLM reads the transcript and fills in the CRM</div><div id="vcPost"></div></div>
           <div class="card c6"><h2>Compliance</h2><div class="hint" id="cpHint"></div><div id="cpRules"></div></div>
-          <div class="card c6"><h2>Dials the rules stopped</h2><div class="hint">Written by the agent before ringing (data/blocked). These clients were not called.</div><div class="bars wide" id="cpBlocked"></div><div id="cpBlockedRows"></div></div>
+          <div class="card c6"><h2>Calls blocked before dialling</h2><div class="hint">Before ringing a client, the agent checks the calling rules (already called today or this week, do-not-call, AI server down). These calls were stopped and the client was not called.</div><div class="bars wide" id="cpBlocked"></div><div id="cpBlockedRows"></div></div>
           <div class="card c6"><h2>Service health</h2><div class="hint" id="cpHealthHint"></div><div id="cpHealth"></div></div>
           <div class="card c6"><h2>Retention</h2><div class="hint" id="cpRetHint"></div><div id="cpRet"></div></div>
         </div>

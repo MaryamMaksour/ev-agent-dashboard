@@ -78,6 +78,45 @@ class WhatsAppTests(unittest.TestCase):
         self.assertEqual(cs["avg_questions"], 1.5)
         self.assertEqual(cs["multi_question_share"], 0.5)
 
+    def test_errors_summary_and_list(self):
+        s = self.src.error_summary(30, NOW)
+        self.assertTrue(s["available"])
+        t = s["totals"]
+        self.assertEqual(t["errors"], 3)  # the 40-day-old one is outside the range
+        self.assertEqual(t["people"], 2)
+        self.assertEqual(t["questions"], 2)  # two errors on "List every EOI" count once
+        self.assertAlmostEqual(t["question_share"], round(2 / 7, 3))
+        self.assertEqual({k["key"] for k in s["by_kind"]}, {"tool_error", "round_limit", "claude_api"})
+        self.assertEqual(s["by_system"], [{"name": "Zoho CRM", "count": 1}])
+        self.assertEqual(sum(d["value"] for d in s["per_day"]), 3)
+        self.assertEqual(self.src.error_summary(None, NOW)["totals"]["errors"], 4)
+        page = self.src.error_list(30, show_text=True, kind="claude_api", now=NOW)
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["items"][0]["kind_label"], "Claude API error")
+
+    def test_viewer_never_gets_error_text(self):
+        page = self.src.error_list(None, show_text=False, now=NOW)
+        self.assertTrue(page["items"])
+        self.assertTrue(all(i["message"] is None and i["question"] is None for i in page["items"]))
+        item = self.src.error(page["items"][0]["id"], show_text=False)
+        self.assertIsNone(item["detail"])
+        self.assertIsNone(item["ip"])
+        self.assertIsNotNone(self.src.error(page["items"][0]["id"], show_text=True)["message"])
+
+    def test_old_agent_without_error_log(self):
+        import shutil
+        import sqlite3
+        folder = os.path.join(self.tmp.name, "old")
+        os.makedirs(folder)
+        shutil.copy(self.src.audit_path, folder)
+        conn = sqlite3.connect(os.path.join(folder, "audit.db"))
+        conn.execute("DROP TABLE error_log")
+        conn.commit()
+        conn.close()
+        s = WhatsAppSource(folder, UAE).error_summary(30, NOW)
+        self.assertFalse(s["available"])
+        self.assertEqual(s["totals"]["errors"], 0)
+
     def test_missing_folder_is_not_an_error(self):
         src = WhatsAppSource(os.path.join(self.tmp.name, "nope"), UAE)
         self.assertEqual(src.summary(30, NOW)["totals"]["questions"], 0)

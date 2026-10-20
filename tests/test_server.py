@@ -113,6 +113,10 @@ class ServerTests(unittest.TestCase):
         self.assertIsNone(json.loads(data)["answer"])
         r, _ = self.req("GET", "/api/whatsapp/logins?range=all", cookie=viewer)
         self.assertEqual(r.status, 403)
+        errs = json.loads(self.req("GET", "/api/whatsapp/errorlist?range=all", cookie=viewer)[1])["items"]
+        self.assertTrue(errs and all(e["message"] is None and e["question"] is None for e in errs))
+        self.assertIsNone(json.loads(self.req("GET", f"/api/whatsapp/error?id={errs[0]['id']}", cookie=viewer)[1])["detail"])
+        self.assertTrue(json.loads(self.req("GET", f"/api/whatsapp/error?id={errs[0]['id']}", cookie=admin)[1])["message"])
         call = "20261015-101500/qwen3_8b/scripted/logs/01_qualified_full"
         r, data = self.req("GET", f"/api/voice/call?id={call}", cookie=viewer)
         self.assertIsNone(json.loads(data)["events"])
@@ -125,7 +129,7 @@ class ServerTests(unittest.TestCase):
     def test_pages_and_api(self):
         _, admin = self.login("admin", "admin-password-1")
         for path in ("/api/me", "/api/status", "/api/overview?range=all", "/api/whatsapp/summary?range=7",
-                     "/api/whatsapp/logins?range=all", "/api/voice/runs", "/api/voice/run?id=20261015-101500",
+                     "/api/whatsapp/logins?range=all", "/api/whatsapp/errors?range=all", "/api/whatsapp/errorlist?range=30&kind=tool_error", "/api/voice/runs", "/api/voice/run?id=20261015-101500",
                      "/api/voicecalls/summary?range=all", "/api/speech/run?id=20261016T080000-round_trip",
                      "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000",
                      "/api/voicecalls/hours?range=all", "/api/voicecalls/hours?range=all&day=2026-10-16",
