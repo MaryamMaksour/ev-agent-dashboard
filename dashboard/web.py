@@ -182,7 +182,6 @@ def make_handler(app: App):
 
         # ---------- API ----------
         def api(self, path: str, qs: dict, user: dict):
-            admin = user["role"] == "admin"
             days = RANGES.get(qs.get("range", "30"), 30)
             if path == "/api/me":
                 return self.json(200, {"name": user["name"], "username": user["username"], "role": user["role"],
@@ -209,8 +208,7 @@ def make_handler(app: App):
                 except ValueError:
                     return self.json(400, {"error": "offset and min_calls must be numbers."})
                 return self.json(200, app.voice_calls.clients(days, q=qs.get("q", "")[:60], min_calls=min_calls,
-                                                              sort=qs.get("sort", "calls"), offset=offset,
-                                                              show_names=admin))
+                                                              sort=qs.get("sort", "calls"), offset=offset))
             if path == "/api/alerts":
                 return self.json(200, app.voice_ops.alerts())
             if path == "/api/voicecalls/compliance":
@@ -218,9 +216,9 @@ def make_handler(app: App):
                 return self.json(200, {"blocked": ops.blocked(days), "compliance": ops.compliance(days),
                                        "retention": ops.retention(), "health": ops.health()})
             if path == "/api/voicecalls/followup":
-                return self.json(200, app.voice_calls.follow_up(show_text=admin))
+                return self.json(200, app.voice_calls.follow_up())
             if path == "/api/voicecalls/client":
-                client = app.voice_calls.client_calls(qs.get("id", ""), show_names=admin)
+                client = app.voice_calls.client_calls(qs.get("id", ""))
                 if not client:
                     return self.json(404, {"error": "No calls found for that client."})
                 return self.json(200, client)
@@ -228,17 +226,16 @@ def make_handler(app: App):
                 call = app.voice_calls.call(qs.get("id", ""))
                 if not call:
                     return self.json(404, {"error": "That call was not found."})
-                if admin:
-                    app.access_log("view_voice_call", username=user["username"], call_id=call["id"])
-                return self.json(200, public_voice_call(call, full=True, show_text=admin))
+                app.access_log("view_voice_call", username=user["username"], call_id=call["id"])
+                return self.json(200, public_voice_call(call, full=True))
             if path == "/api/speech/run":
-                run = app.voice_calls.speech_run(qs.get("id", ""), show_text=admin)
+                run = app.voice_calls.speech_run(qs.get("id", ""))
                 return self.json(200, run) if run else self.json(404, {"error": "That speech test was not found."})
             if path == "/api/whatsapp/summary":
                 return self.json(200, app.whatsapp.summary(days))
             if path == "/api/whatsapp/questions":
                 return self.json(200, app.whatsapp.question_list(
-                    days, show_text=admin, outcome=qs.get("outcome", ""), flag=qs.get("flag", ""),
+                    days, outcome=qs.get("outcome", ""), flag=qs.get("flag", ""),
                     q=qs.get("q", ""), limit=min(int(qs.get("limit", "50") or 50), 200),
                     offset=max(int(qs.get("offset", "0") or 0), 0)))
             if path == "/api/whatsapp/question":
@@ -246,12 +243,11 @@ def make_handler(app: App):
                     qid = int(qs.get("id", ""))
                 except ValueError:
                     return self.json(400, {"error": "Missing question id."})
-                item = app.whatsapp.question(qid, show_text=admin)
+                item = app.whatsapp.question(qid)
                 if not item:
                     return self.json(404, {"error": "That question was not found."})
-                if admin:
-                    app.access_log("view_question", username=user["username"], question_id=qid)
-                    item["steps"] = app.whatsapp.steps(qid)
+                app.access_log("view_question", username=user["username"], question_id=qid)
+                item["steps"] = app.whatsapp.steps(qid)
                 return self.json(200, item)
             if path == "/api/whatsapp/alerts":
                 return self.json(200, app.whatsapp.alerts())
@@ -262,22 +258,19 @@ def make_handler(app: App):
                     offset = max(int(qs.get("offset", "0") or 0), 0)
                 except ValueError:
                     return self.json(400, {"error": "offset must be a number."})
-                return self.json(200, app.whatsapp.error_list(days, show_text=admin, kind=qs.get("kind", "")[:40],
+                return self.json(200, app.whatsapp.error_list(days, kind=qs.get("kind", "")[:40],
                                                               offset=offset))
             if path == "/api/whatsapp/error":
                 try:
                     eid = int(qs.get("id", ""))
                 except ValueError:
                     return self.json(400, {"error": "Missing error id."})
-                item = app.whatsapp.error(eid, show_text=admin)
+                item = app.whatsapp.error(eid)
                 if not item:
                     return self.json(404, {"error": "That error was not found."})
-                if admin:
-                    app.access_log("view_error", username=user["username"], error_id=eid)
+                app.access_log("view_error", username=user["username"], error_id=eid)
                 return self.json(200, item)
             if path == "/api/whatsapp/logins":
-                if not admin:
-                    return self.json(403, {"error": "Only admins can see the login log."})
                 return self.json(200, app.whatsapp.login_summary(days))
             if path == "/api/voice/runs":
                 return self.json(200, {"runs": app.voice.runs()})
@@ -288,9 +281,8 @@ def make_handler(app: App):
                 call = app.voice.call(qs.get("id", ""))
                 if not call:
                     return self.json(404, {"error": "That call was not found."})
-                if admin:
-                    app.access_log("view_call", username=user["username"], call_id=call["id"])
-                return self.json(200, public_call(call, with_events=True, show_text=admin))
+                app.access_log("view_call", username=user["username"], call_id=call["id"])
+                return self.json(200, public_call(call, with_events=True))
             return self.json(404, {"error": "Unknown address."})
 
     return Handler

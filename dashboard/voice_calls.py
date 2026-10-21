@@ -176,8 +176,8 @@ TEXT_FIELDS = ("transcript", "tool_calls", "actions", "summary", "filled_after_c
                "callback_text")
 
 
-def llm_rows(lines: list, *, show_text: bool) -> list:
-    """llm.jsonl -> one row per LLM request: timings and tokens for everyone, text for admins only."""
+def llm_rows(lines: list) -> list:
+    """llm.jsonl -> one row per LLM request: timings, tokens, reply and tool calls."""
     rows = []
     for x in lines:
         stage = x.get("stage") or "call"
@@ -194,48 +194,38 @@ def llm_rows(lines: list, *, show_text: bool) -> list:
             "ok": bool(x.get("ok", not x.get("error"))) and not x.get("cancelled"),
             "failed": bool(x.get("error")),
         }
-        if show_text:
-            row["reply"] = x.get("text") if stage == "call" else x.get("reply")
-            row["tool_calls"] = x.get("tool_calls") or []
-            row["error"] = x.get("error")
+        row["reply"] = x.get("text") if stage == "call" else x.get("reply")
+        row["tool_calls"] = x.get("tool_calls") or []
+        row["error"] = x.get("error")
         rows.append(row)
     return rows
 
 
-def crm_rows(lines: list, *, show_text: bool) -> list:
-    """crm_changes.jsonl -> one row per CRM write. Everyone sees which fields changed; admins see the values."""
+def crm_rows(lines: list) -> list:
+    """crm_changes.jsonl -> one row per CRM write: which fields changed and their values."""
     rows = []
     for x in lines:
         changed = x.get("changed") or {}
         row = {"ts": x.get("ts"), "source": x.get("source") or "call", "action": x.get("action"),
-               "ok": bool(x.get("ok", True)), "seconds": x.get("seconds"), "fields": sorted(changed)}
-        if show_text:
-            row["changed"] = changed
-            row["error"] = x.get("error")
+               "ok": bool(x.get("ok", True)), "seconds": x.get("seconds"), "fields": sorted(changed),
+               "changed": changed, "error": x.get("error")}
         rows.append(row)
     return rows
 
 
-def public_call(c: dict, *, full: bool, show_text: bool) -> dict:
+def public_call(c: dict, *, full: bool) -> dict:
     hidden = {"ts", "ended_at", "metrics", "turns", "errors", "llm_log", "crm_log", *TEXT_FIELDS}
     out = {k: v for k, v in c.items() if k not in hidden}
     out["ts"], out["ended_at"] = m.iso(c["ts"]), m.iso(c["ended_at"])
     out["callback_at"] = m.iso(c.get("callback_at"))
     out["tool_call_count"] = c.get("tool_call_count", len(c["tool_calls"] or []))
-    if c["transfer"] and not show_text:
-        out["transfer"] = {k: v for k, v in c["transfer"].items() if k != "reason"}
-    if c["error"] and not show_text:
-        out["error"] = "hidden"  # an exception message can quote what the caller said
     if full:
-        out["turns"] = c["turns"]  # timings and tokens only
+        out["turns"] = c["turns"]
         for k in TEXT_FIELDS:
-            out[k] = c[k] if show_text else None
-        # which stage failed and when, for everyone; the message itself for admins only
-        out["errors"] = [e if show_text else {k: v for k, v in e.items() if k in ("stage", "stage_label", "at",
-                                                                                   "recoverable")}
-                         for e in c["errors"]]
-        out["llm_requests"] = llm_rows(c.get("llm_log") or [], show_text=show_text)
-        out["crm_changes"] = crm_rows(c.get("crm_log") or [], show_text=show_text)
+            out[k] = c[k]
+        out["errors"] = c["errors"]
+        out["llm_requests"] = llm_rows(c.get("llm_log") or [])
+        out["crm_changes"] = crm_rows(c.get("crm_log") or [])
     return out
 
 
@@ -393,14 +383,14 @@ class VoiceCallSource:
 
     # ---------- calls grouped by client ----------
     def clients(self, days: Optional[int], *, q: str = "", min_calls: int = 0, sort: str = "calls",
-                offset: int = 0, limit: int = 50, show_names: bool = False, now=None) -> dict:
+                offset: int = 0, limit: int = 50, now=None) -> dict:
         """One row per client (lead) with a call in the period. Attempts today / in 7 days count every
         phone call, whatever the period, so they match the agent's calling limits."""
         rows = self._remember("clients", (days,), now, lambda: self._client_rows(days, now))
         q = q.strip().lower()
         if q:
             rows = [r for r in rows if q in r["lead_id"].lower()
-                    or (show_names and q in (self.lead_start(r["last_call_id"])[0] or "").lower())]
+                    or q in (self.lead_start(r["last_call_id"])[0] or "").lower()]
         if min_calls:
             rows = [r for r in rows if r["calls"] >= min_calls]
         keys = {"calls": lambda r: (-r["calls"], r["last_ts"] and -r["last_ts"].timestamp()),
@@ -411,7 +401,7 @@ class VoiceCallSource:
         items = []
         for r in page:
             item = {k: (m.iso(v) if k in ("first_ts", "last_ts", "callback_at") else v) for k, v in r.items()}
-            item["name"] = self.lead_start(r["last_call_id"])[0] if show_names else None
+            item["name"] = self.lead_start(r["last_call_id"])[0]
             items.append(item)
         return {"total": len(rows), "items": items, "offset": offset, "limit": limit}
 
@@ -456,7 +446,7 @@ class VoiceCallSource:
         ("llm_failure", "Call stopped by a technical problem", "The AI failed mid-call (the agent booked a callback)."),
     ]
 
-    def follow_up(self, *, show_text: bool = False, now=None, per_group: int = 200) -> dict:
+    def follow_up(self, *, now=None, per_group: int = 200) -> dict:
         """Who the sales team should contact, from each client's calls. Read-only: an item goes away
         when a newer call to that client happens (or, for hot leads, after 7 days). Do-not-call clients are left out."""
         now = now or datetime.now(timezone.utc)
@@ -478,7 +468,7 @@ class VoiceCallSource:
                                            "when": "none" if not due else "overdue" if due < now
                                            else "today" if due.astimezone(self.tz).date() == now.astimezone(self.tz).date()
                                            else "later",
-                                           "callback_text": last["callback_text"] if show_text else None})
+                                           "callback_text": last["callback_text"]})
             if last["transfer_asked"] and not last["transferred"]:
                 groups["person"].append({**base, "call_id": last["id"], "due": None})
             if last["ts"] >= week_ago and (last["classification"] == "qualified" or last["interest_level"] == "hot"):
@@ -494,25 +484,23 @@ class VoiceCallSource:
             items = []
             for x in groups[key][:per_group]:
                 item = {k: (m.iso(v) if isinstance(v, datetime) else v) for k, v in x.items()}
-                item["name"], item["summary"] = (None, None)
-                if show_text:
-                    item["name"] = self.lead_start(x["call_id"])[0]
-                    full = self.call(x["call_id"])
-                    item["summary"] = full["summary"] if full else None
+                item["name"] = self.lead_start(x["call_id"])[0]
+                full = self.call(x["call_id"])
+                item["summary"] = full["summary"] if full else None
                 items.append(item)
             out.append({"key": key, "label": label, "hint": hint, "count": len(groups[key]), "items": items})
         return {"groups": out, "total": sum(g["count"] for g in out),
                 "overdue": sum(1 for x in groups["callback"] if x["when"] == "overdue")}
 
-    def client_calls(self, lead_id: str, *, show_names: bool = False) -> Optional[dict]:
+    def client_calls(self, lead_id: str) -> Optional[dict]:
         """Every call with this client, newest first (numbers only; open a call for the rest)."""
         if not lead_id or not _SAFE.match(lead_id):
             return None
         cs = [c for c in self._all_calls() if c["lead_id"] == lead_id]
         if not cs:
             return None
-        name, _ = self.lead_start(cs[0]["id"]) if show_names else (None, None)
-        return {"lead_id": lead_id, "name": name, "calls": [public_call(c, full=False, show_text=False) for c in cs]}
+        name, _ = self.lead_start(cs[0]["id"])
+        return {"lead_id": lead_id, "name": name, "calls": [public_call(c, full=False) for c in cs]}
 
     def processing(self) -> int:
         """Calls whose post-call work hasn't finished: a raw file with no final record next to it."""
@@ -630,7 +618,7 @@ class VoiceCallSource:
             "per_day": m.day_series(cs, self.tz, days, now=now),
             "cost": self.cost(cs, days, now),
             "heatmap": m.heatmap(cs, self.tz),
-            "calls": [public_call(c, full=False, show_text=False) for c in cs[:100]],
+            "calls": [public_call(c, full=False) for c in cs[:100]],
             "speech": self.speech_latest(),
             "status": self.status(),
         }
@@ -731,16 +719,13 @@ class VoiceCallSource:
             latest.setdefault(r["mode"], r)
         return {"round_trip": latest.get("round_trip"), "recordings": latest.get("recordings"), "runs": len(runs)}
 
-    def speech_run(self, run_id: str, *, show_text: bool) -> Optional[dict]:
+    def speech_run(self, run_id: str) -> Optional[dict]:
         if not run_id or not _SAFE.match(run_id):
             return None
         raw = _load(os.path.join(self.evals_dir, run_id + ".json"))
         if not raw:
             return None
         items = raw.get("items") or []
-        if not show_text:
-            items = [{k: v for k, v in i.items() if k not in ("reference", "transcript", "missed_key_terms")}
-                     for i in items]
         return {"id": run_id, "run_at": raw.get("run_at"), "mode": raw.get("mode"), "language": raw.get("language"),
                 "models": raw.get("models") or {}, "summary": raw.get("summary") or {},
                 "items": sorted(items, key=lambda i: -(i.get("wer") or 0))}

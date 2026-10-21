@@ -74,7 +74,7 @@ _QA_EXTRA = ("answer_type", "confident", "language", "conversation_id", "turn_in
 
 
 def _public_details(d: dict) -> dict:
-    # numbers and labels only: safe for viewers too
+    # numbers and labels only
     return {k: v for k, v in d.items() if k != "language" and v is not None}
 
 
@@ -251,22 +251,22 @@ class WhatsAppSource:
             "kinds": {k: v[0] for k, v in ERROR_KINDS.items()},
         }
 
-    def error_list(self, days: Optional[int], *, show_text: bool, kind: str = "", limit: int = 25, offset: int = 0,
+    def error_list(self, days: Optional[int], *, kind: str = "", limit: int = 25, offset: int = 0,
                    now: Optional[datetime] = None) -> dict:
         rows = self.errors(days, now)
         if kind:
             rows = [r for r in rows if r["kind"] == kind]
         rows.sort(key=lambda r: r["ts"], reverse=True)
-        return {"total": len(rows), "items": [public_error(r, show_text, full=False) for r in rows[offset:offset + limit]]}
+        return {"total": len(rows), "items": [public_error(r, full=False) for r in rows[offset:offset + limit]]}
 
-    def error(self, eid: int, *, show_text: bool) -> Optional[dict]:
+    def error(self, eid: int) -> Optional[dict]:
         for r in self.errors(None):
             if r["id"] == eid:
-                return public_error(r, show_text, full=True)
+                return public_error(r, full=True)
         return None
 
     def alerts(self, now: Optional[datetime] = None) -> dict:
-        """Checks over the last 24 hours. Counts only, never names or question text, so viewers can see them too."""
+        """Checks over the last 24 hours. Counts only, never names or question text."""
         now = now or datetime.now(timezone.utc)
         s = self.alert_settings
         out: list = []
@@ -421,24 +421,23 @@ class WhatsAppSource:
             "status": self.status(),
         }
 
-    def question_list(self, days: Optional[int], *, show_text: bool, outcome: str = "", flag: str = "",
+    def question_list(self, days: Optional[int], *, outcome: str = "", flag: str = "",
                       q: str = "", limit: int = 50, offset: int = 0, now: Optional[datetime] = None) -> dict:
         rows = self.questions(days, now)
         if outcome:
             rows = [r for r in rows if r["outcome"] == outcome]
         if flag in ("slow", "asked_again", "doubted"):
             rows = [r for r in rows if r[flag]]
-        if q and show_text:
+        if q:
             ql = q.lower()
             rows = [r for r in rows if ql in r["question"].lower() or ql in r["answer"].lower()
                     or ql in r["name"].lower()]
         rows.sort(key=lambda r: r["ts"], reverse=True)
         page = rows[offset:offset + limit]
-        return {"total": len(rows), "items": [public_question(r, show_text, full=False) for r in page]}
+        return {"total": len(rows), "items": [public_question(r, full=False) for r in page]}
 
     def steps(self, qid: int) -> list:
-        """Model calls and tool calls behind one answer (ev-proto Phase 2). Callers must only pass this to admins:
-        it holds the model's written plan and the queries sent to Zoho / MenaMe."""
+        """Model calls and tool calls behind one answer (ev-proto Phase 2). It holds the model's written plan and the queries sent to Zoho / MenaMe."""
         raw = self._rows(self.audit_path, "steps", "SELECT data FROM steps WHERE qa_id=? ORDER BY id", (qid,))
         out = []
         for r in raw:
@@ -448,10 +447,10 @@ class WhatsAppSource:
                 continue
         return out
 
-    def question(self, qid: int, *, show_text: bool) -> Optional[dict]:
+    def question(self, qid: int) -> Optional[dict]:
         for r in self.questions(None):
             if r["id"] == qid:
-                return public_question(r, show_text, full=True)
+                return public_question(r, full=True)
         return None
 
     def login_summary(self, days: Optional[int], now: Optional[datetime] = None) -> dict:
@@ -490,36 +489,35 @@ def _mark_followups(rows: list) -> None:
                 prev["asked_again"] = True
 
 
-def public_error(r: dict, show_text: bool, full: bool) -> dict:
-    """Type, place and time for everyone. The message, question, tool input, traceback and IP only for admins:
-    they can hold the person's search words or record values."""
+def public_error(r: dict, full: bool) -> dict:
+    """What the browser gets for one error: type, place, time, message, question, detail and IP."""
     out = {
         "id": r["id"], "ts": m.iso(r["ts"]), "kind": r["kind"], "kind_label": _error_label(r["kind"]),
         "source": r["source"], "system": r["system"], "name": r["name"],
-        "message": r["message"] if show_text else None,
-        "question": r["question"] if show_text else None,
+        "message": r["message"],
+        "question": r["question"],
     }
     if full:
         out["kind_hint"] = ERROR_KINDS.get(r["kind"], ("", ""))[1]
-        out["detail"] = r["detail"] if show_text else None
+        out["detail"] = r["detail"]
         out["path"] = r["path"]
-        out["ip"] = r["ip"] if show_text else None
+        out["ip"] = r["ip"]
     return out
 
 
-def public_question(r: dict, show_text: bool, full: bool) -> dict:
-    """What the browser gets. Question/answer text, sources and IPs only for people allowed to see content."""
+def public_question(r: dict, full: bool) -> dict:
+    """What the browser gets for one question: text, answer, sources and IP included."""
     out = {
         "id": r["id"], "ts": m.iso(r["ts"]), "name": r["name"], "role": r["role"], "model": r["model"],
         "cost_aed": round(r["cost_aed"], 4), "cost_usd": round(r["cost_usd"], 5), "seconds": round(r["seconds"], 2),
         "outcome": r["outcome"], "outcome_label": OUTCOMES[r["outcome"]], "language": r["language"],
         "flags": [f for f in ("slow", "asked_again", "doubted") if r[f]],
         "source_count": len(r["sources"]),
-        "question": r["question"] if show_text else None,
+        "question": r["question"],
     }
     if full:
-        out["answer"] = r["answer"] if show_text else None
-        out["sources"] = r["sources"] if show_text else None
-        out["ip"] = r["ip"] if show_text else None
+        out["answer"] = r["answer"]
+        out["sources"] = r["sources"]
+        out["ip"] = r["ip"]
         out["details"] = _public_details(r.get("details") or {})
     return out

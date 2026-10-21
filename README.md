@@ -46,8 +46,7 @@ See [docs/phases.md](docs/phases.md) for what each phase adds.
 
 | Role | Sees |
 |---|---|
-| `admin` | Everything, including question and answer text, sources, IPs, conversation transcripts and the login log |
-| `viewer` | Numbers and charts only. Never the text of a question, an answer or a call |
+| `admin` | Everything, including question and answer text, sources, IPs, conversation transcripts, call text and the login log |
 
 Logins, failed logins and every time an admin opens a question or a call are written to `logs/dashboard_access.jsonl`.
 
@@ -147,8 +146,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now ev-agent-dashboard
 ### Users
 
 ```bash
-python manage_users.py add omar --role viewer --name "Omar H."
-python manage_users.py add omar --role viewer      # same command resets a password
+python manage_users.py add omar --role admin --name "Omar H."
+python manage_users.py add omar --role admin       # same command resets a password
 python manage_users.py list
 python manage_users.py remove omar
 ```
@@ -174,7 +173,7 @@ They build small data folders in the agents' formats and check:
 - the numbers
 - the outcome rules
 - read-only access
-- that viewers never receive text
+- that an old `viewer` entry in `users.json` cannot log in
 - login, cookies and lockout
 - blocked path tricks and cross-site posts
 

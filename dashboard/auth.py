@@ -1,9 +1,8 @@
 """Login for the dashboard: users file with hashed passwords, signed session cookies, and a lockout after
 repeated failures. Standard library only.
 
-Roles:
-  admin   sees everything, including question/answer text, transcripts, IPs and the login log
-  viewer  sees numbers and charts only, never the text of what people asked or what the agents said
+Everyone who can log in is an admin and sees everything, including question/answer text, transcripts,
+IPs and the login log. There are no other roles.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ import threading
 import time
 from typing import Optional
 
-ROLES = ("admin", "viewer")
+ROLE = "admin"
 _ITERATIONS = 240_000
 
 
@@ -82,7 +81,9 @@ class UserStore:
             return None
         if not verify_password(password or "", user.get("password", "")):
             return None
-        return {"username": username.strip().lower(), "name": user.get("name") or username, "role": user.get("role")}
+        if user.get("role", ROLE) != ROLE:
+            return None  # an old entry from when a "viewer" role existed: it must be re-added as an admin
+        return {"username": username.strip().lower(), "name": user.get("name") or username, "role": ROLE}
 
     def save(self, users: dict) -> None:
         tmp = self.path + ".tmp"
@@ -120,7 +121,7 @@ class Sessions:
             payload = json.loads(_unb64(body))
         except ValueError:
             return None
-        if payload.get("exp", 0) < (now or time.time()) or payload.get("r") not in ROLES:
+        if payload.get("exp", 0) < (now or time.time()) or payload.get("r") != ROLE:
             return None
         return {"username": payload["u"], "name": payload["n"], "role": payload["r"]}
 

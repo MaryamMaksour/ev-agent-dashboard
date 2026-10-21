@@ -188,15 +188,15 @@ def parse_call(path: str, call_id: str, naive_tz) -> dict:
     }
 
 
-def public_call(c: dict, *, with_events: bool, show_text: bool) -> dict:
+def public_call(c: dict, *, with_events: bool) -> dict:
     out = {k: v for k, v in c.items() if k not in ("events", "ts", "ended_at", "tool_names", "final_row", "waits")}
     out["ts"] = m.iso(c["ts"])
     out["ended_at"] = m.iso(c["ended_at"])
     out["tool_names"] = dict(c["tool_names"])
     if with_events:
-        out["final_row"] = c["final_row"] if show_text else None
-        out["events"] = c["events"] if show_text else None
-        out["waits"] = c["waits"]  # timings only, no text
+        out["final_row"] = c["final_row"]
+        out["events"] = c["events"]
+        out["waits"] = c["waits"]
     return out
 
 
@@ -364,7 +364,7 @@ class VoiceTestSource:
                                       for k, v in classes.items()], key=lambda x: -x["total"]),
             "slow_reasons": [{"label": k, "count": v} for k, v in reasons.most_common()],
             "slow_reply_seconds": SLOW_REPLY_SECONDS,
-            "calls": [public_call(c, with_events=False, show_text=False)
+            "calls": [public_call(c, with_events=False)
                       for c in sorted(cs, key=lambda c: (c["model"], c["mode"], c["scenario"]))],
         }
 

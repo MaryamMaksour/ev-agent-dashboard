@@ -23,8 +23,8 @@ class AuthUnitTests(unittest.TestCase):
 
     def test_session_tamper_and_expiry(self):
         s = Sessions(SECRET, 1)
-        tok = s.issue({"username": "a", "name": "A", "role": "viewer"}, now=1000)
-        self.assertEqual(s.read(tok, now=1001)["role"], "viewer")
+        tok = s.issue({"username": "a", "name": "A", "role": "admin"}, now=1000)
+        self.assertEqual(s.read(tok, now=1001)["role"], "admin")
         body, sig = tok.rsplit(".", 1)
         self.assertIsNone(s.read(body + "." + sig[:-2] + "aa", now=1001))
         self.assertIsNone(s.read(tok, now=1000 + 3601))
@@ -53,7 +53,7 @@ class ServerTests(unittest.TestCase):
         users = os.path.join(cls.tmp.name, "users.json")
         UserStore(users).save({
             "admin": {"name": "Admin", "role": "admin", "password": hash_password("admin-password-1")},
-            "view": {"name": "Viewer", "role": "viewer", "password": hash_password("viewer-password-1")},
+            "old": {"name": "Old viewer", "role": "viewer", "password": hash_password("viewer-password-1")},
         })
         cls.access_log = os.path.join(cls.tmp.name, "access.jsonl")
         fixtures = os.path.join(os.path.dirname(__file__), "fixtures", "voice_agent")
@@ -100,34 +100,30 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(r.getheader("Location"), "/login?error=wrong")
         self.assertIsNone(cookie)
 
-    def test_admin_sees_text_viewer_does_not(self):
+    def test_admin_sees_everything(self):
         _, admin = self.login("admin", "admin-password-1")
-        _, viewer = self.login("view", "viewer-password-1")
         r, data = self.req("GET", "/api/whatsapp/questions?range=all", cookie=admin)
         items = json.loads(data)["items"]
         self.assertEqual(r.status, 200)
         self.assertTrue(all(i["question"] for i in items))
-        r, data = self.req("GET", "/api/whatsapp/questions?range=all", cookie=viewer)
-        self.assertTrue(all(i["question"] is None for i in json.loads(data)["items"]))
-        r, data = self.req("GET", f"/api/whatsapp/question?id={items[0]['id']}", cookie=viewer)
-        self.assertIsNone(json.loads(data)["answer"])
-        self.assertNotIn("steps", json.loads(data))  # tool inputs and the model's plan are admin-only
         r, data = self.req("GET", f"/api/whatsapp/question?id={items[0]['id']}", cookie=admin)
+        self.assertTrue(json.loads(data)["answer"])
         self.assertIn("steps", json.loads(data))
-        r, _ = self.req("GET", "/api/whatsapp/logins?range=all", cookie=viewer)
-        self.assertEqual(r.status, 403)
-        errs = json.loads(self.req("GET", "/api/whatsapp/errorlist?range=all", cookie=viewer)[1])["items"]
-        self.assertTrue(errs and all(e["message"] is None and e["question"] is None for e in errs))
-        self.assertIsNone(json.loads(self.req("GET", f"/api/whatsapp/error?id={errs[0]['id']}", cookie=viewer)[1])["detail"])
+        r, _ = self.req("GET", "/api/whatsapp/logins?range=all", cookie=admin)
+        self.assertEqual(r.status, 200)
+        errs = json.loads(self.req("GET", "/api/whatsapp/errorlist?range=all", cookie=admin)[1])["items"]
+        self.assertTrue(errs and all(e["message"] for e in errs))
         self.assertTrue(json.loads(self.req("GET", f"/api/whatsapp/error?id={errs[0]['id']}", cookie=admin)[1])["message"])
         call = "20261015-101500/qwen3_8b/scripted/logs/01_qualified_full"
-        r, data = self.req("GET", f"/api/voice/call?id={call}", cookie=viewer)
-        self.assertIsNone(json.loads(data)["events"])
         r, data = self.req("GET", f"/api/voice/call?id={call}", cookie=admin)
         self.assertTrue(json.loads(data)["events"])
         real = "/api/voicecalls/call?id=lead-L001-20261016T093000-2026-10-16T093000"
-        self.assertIsNone(json.loads(self.req("GET", real, cookie=viewer)[1])["transcript"])
         self.assertTrue(json.loads(self.req("GET", real, cookie=admin)[1])["transcript"])
+
+    def test_old_viewer_entry_cannot_log_in(self):
+        r, cookie = self.login("old", "viewer-password-1")
+        self.assertEqual(r.getheader("Location"), "/login?error=wrong")
+        self.assertIsNone(cookie)
 
     def test_pages_and_api(self):
         _, admin = self.login("admin", "admin-password-1")

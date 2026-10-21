@@ -231,26 +231,21 @@
     await renderErrorRows();
   }
   async function renderErrorRows() {
-    const w = state.we, admin = state.me.role === "admin";
+    const w = state.we;
     const d = await api(`/api/whatsapp/errorlist?${new URLSearchParams({ range: state.range, kind: w.kind, offset: w.offset })}`);
-    $("#weRows").innerHTML = d.items.length ? d.items.map((r) => `<tr class="click" tabindex="0" data-err="${r.id}"><td class="num muted">${esc(when(r.ts))}</td><td>${esc(r.name || "–")}</td><td><span class="pill crit">${esc(r.kind_label)}</span></td><td class="num">${esc(r.source || "–")}</td><td class="q">${admin ? esc(r.message) : '<span class="muted">Hidden for viewers</span>'}${admin && r.question ? `<br><span class="muted">Q: ${esc(r.question)}</span>` : ""}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">No errors match.</td></tr>`;
+    $("#weRows").innerHTML = d.items.length ? d.items.map((r) => `<tr class="click" tabindex="0" data-err="${r.id}"><td class="num muted">${esc(when(r.ts))}</td><td>${esc(r.name || "–")}</td><td><span class="pill crit">${esc(r.kind_label)}</span></td><td class="num">${esc(r.source || "–")}</td><td class="q">${esc(r.message)}${r.question ? `<br><span class="muted">Q: ${esc(r.question)}</span>` : ""}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">No errors match.</td></tr>`;
     const from = d.total ? w.offset + 1 : 0, to = Math.min(w.offset + 25, d.total);
     $("#wePager").innerHTML = `<span>${from}–${to} of ${num(d.total)}</span><button type="button" data-p="-1" ${w.offset === 0 ? "disabled" : ""}>Newer</button><button type="button" data-p="1" ${to >= d.total ? "disabled" : ""}>Older</button>`;
   }
   async function openError(id) {
     const r = await api(`/api/whatsapp/error?id=${encodeURIComponent(id)}`);
-    const admin = state.me.role === "admin";
     $("#dTitle").textContent = r.kind_label;
     $("#dMeta").innerHTML = [when(r.ts), r.name, r.source, r.system].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
     let b = `<div class="note">${esc(r.kind_hint)}</div>`;
-    if (admin) {
-      b += `<div class="block"><h4>What went wrong</h4><div class="text">${esc(r.message || "–")}</div></div>`;
-      if (r.question) b += `<div class="block"><h4>Question</h4><div class="text">${esc(r.question)}</div></div>`;
-      if (r.detail) b += `<div class="block"><h4>${r.kind === "tool_error" ? "What the agent sent" : "Details"}</h4><div class="code">${esc(r.detail)}</div></div>`;
-      b += `<div class="block"><h4>Page · IP</h4><div class="muted num">${esc(r.path || "–")} · ${esc(r.ip || "–")}</div></div>`;
-    } else {
-      b += `<div class="note">The error message, question and technical details are visible to admins only.</div>`;
-    }
+    b += `<div class="block"><h4>What went wrong</h4><div class="text">${esc(r.message || "–")}</div></div>`;
+    if (r.question) b += `<div class="block"><h4>Question</h4><div class="text">${esc(r.question)}</div></div>`;
+    if (r.detail) b += `<div class="block"><h4>${r.kind === "tool_error" ? "What the agent sent" : "Details"}</h4><div class="code">${esc(r.detail)}</div></div>`;
+    b += `<div class="block"><h4>Page · IP</h4><div class="muted num">${esc(r.path || "–")} · ${esc(r.ip || "–")}</div></div>`;
     openDrawer(b);
   }
   function renderFilters() {
@@ -262,30 +257,25 @@
     }).join("");
   }
   async function renderQuestions() {
-    const w = state.wa, admin = state.me.role === "admin";
+    const w = state.wa;
     const qs = new URLSearchParams({ range: state.range, outcome: w.outcome, flag: w.flag, q: w.q, offset: w.offset, limit: 25 });
     const d = await api(`/api/whatsapp/questions?${qs}`);
     const flagLabel = { slow: "Slow", asked_again: "Asked again", doubted: "Doubted" };
     const tone = { answered: "good", no_answer: "warn", failed: "crit", off_topic: "", other: "" };
-    $("#waRows").innerHTML = d.items.length ? d.items.map((r) => `<tr class="click" tabindex="0" data-q="${r.id}"><td class="num muted">${esc(when(r.ts))}</td><td>${esc(r.name)}</td><td class="q">${admin ? esc(r.question) : '<span class="muted">Hidden for viewers</span>'}</td><td><span class="pill ${tone[r.outcome]}">${esc(r.outcome_label)}</span></td><td><div class="tags">${r.flags.map((f) => `<span class="pill serious">${esc(flagLabel[f])}</span>`).join("")}</div></td><td class="r num">${secs(r.seconds)}</td><td class="r num">${num(r.cost_aed, 3)}</td></tr>`).join("") : `<tr><td colspan="7" class="empty">No questions match.</td></tr>`;
+    $("#waRows").innerHTML = d.items.length ? d.items.map((r) => `<tr class="click" tabindex="0" data-q="${r.id}"><td class="num muted">${esc(when(r.ts))}</td><td>${esc(r.name)}</td><td class="q">${esc(r.question)}</td><td><span class="pill ${tone[r.outcome]}">${esc(r.outcome_label)}</span></td><td><div class="tags">${r.flags.map((f) => `<span class="pill serious">${esc(flagLabel[f])}</span>`).join("")}</div></td><td class="r num">${secs(r.seconds)}</td><td class="r num">${num(r.cost_aed, 3)}</td></tr>`).join("") : `<tr><td colspan="7" class="empty">No questions match.</td></tr>`;
     const from = d.total ? w.offset + 1 : 0, to = Math.min(w.offset + 25, d.total);
     $("#waPager").innerHTML = `<span>${from}–${to} of ${num(d.total)}</span><button type="button" data-p="-1" ${w.offset === 0 ? "disabled" : ""}>Newer</button><button type="button" data-p="1" ${to >= d.total ? "disabled" : ""}>Older</button>`;
   }
   async function openQuestion(id) {
     const r = await api(`/api/whatsapp/question?id=${encodeURIComponent(id)}`);
-    const admin = state.me.role === "admin";
-    $("#dTitle").textContent = admin ? r.question : `Question #${r.id}`;
+    $("#dTitle").textContent = r.question;
     $("#dMeta").innerHTML = [r.name, r.role, when(r.ts), r.model].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
     let b = `<div class="d-sum"><div><span>Result</span><b>${esc(r.outcome_label)}</b></div><div><span>Time</span><b>${secs(r.seconds)}</b></div><div><span>Cost</span><b>${aed(r.cost_aed, 3)}</b></div><div><span>Sources</span><b>${num(r.source_count)}</b></div></div>`;
     if (r.flags.length) b += `<div class="note">Signals: ${r.flags.map((f) => ({ slow: "slower than 10 s", asked_again: "the person asked again in other words", doubted: 'the person replied "are you sure?"' }[f])).map(esc).join("; ")}.</div>`;
-    if (admin) {
-      b += `<div class="block"><h4>Question</h4><div class="text">${esc(r.question)}</div></div>`;
-      b += `<div class="block"><h4>Answer</h4><div class="text answer">${esc(r.answer)}</div></div>`;
-      b += `<div class="block"><h4>Sources</h4>${r.sources && r.sources.length ? `<div class="code">${esc(r.sources.map((s) => typeof s === "object" ? `${s.module || "?"} · ${s.id || ""}` : String(s)).join("\n"))}</div>` : '<div class="muted">No sources saved.</div>'}</div>`;
-      b += `<div class="block"><h4>Language · IP</h4><div class="muted">${esc(r.language === "ar" ? "Arabic" : "English")} · ${esc(r.ip || "–")}</div></div>`;
-    } else {
-      b += `<div class="note">Question and answer text are visible to admins only.</div>`;
-    }
+    b += `<div class="block"><h4>Question</h4><div class="text">${esc(r.question)}</div></div>`;
+    b += `<div class="block"><h4>Answer</h4><div class="text answer">${esc(r.answer)}</div></div>`;
+    b += `<div class="block"><h4>Sources</h4>${r.sources && r.sources.length ? `<div class="code">${esc(r.sources.map((s) => typeof s === "object" ? `${s.module || "?"} · ${s.id || ""}` : String(s)).join("\n"))}</div>` : '<div class="muted">No sources saved.</div>'}</div>`;
+    b += `<div class="block"><h4>Language · IP</h4><div class="muted">${esc(r.language === "ar" ? "Arabic" : "English")} · ${esc(r.ip || "–")}</div></div>`;
     const x = r.details || {};
     if (x.answer_type || x.tokens_in != null) {
       const fin = { submit_answer: "answered through the final-answer step", free_text: "answered in plain text", cut_off: "answer cut off (token limit)", round_limit_wrapup: "research limit reached, wrapped up", round_limit_error: "research limit reached, no answer" };
@@ -295,13 +285,12 @@
     } else {
       b += `<div class="note">This question was answered before the detailed log was switched on, so tokens, confidence and steps were not saved.</div>`;
     }
-    if (admin && r.steps && r.steps.length) {
+    if (r.steps && r.steps.length) {
       b += `<div class="block"><h4>Steps</h4><div class="code">${esc(r.steps.map((s) => s.type === "model"
         ? `Model call ${s.n} · ${secs(s.seconds)} · ${num(s.in)} in / ${num(s.out)} out${s.tools && s.tools.length ? ` · asked for ${s.tools.join(", ")}` : ""}${s.text ? `
     ${s.text.replace(/\s+/g, " ").slice(0, 300)}` : ""}`
         : `Tool ${s.tool}${s.system ? ` (${s.system})` : ""} · ${secs(s.seconds)} · ${s.ok ? `${num(s.rows)} rows${s.more ? ", more available" : ""}` : `FAILED: ${s.error}`}
-    ${JSON.stringify(s.input || {}).slice(0, 300)}`).join("
-"))}</div></div>`;
+    ${JSON.stringify(s.input || {}).slice(0, 300)}`).join("\n"))}</div></div>`;
     }
     openDrawer(b);
   }
@@ -445,7 +434,6 @@
   // ---------- sales follow-up ----------
   async function renderFollowUp() {
     const d = await api("/api/voicecalls/followup");
-    const admin = state.me.role === "admin";
     const badge = $("#fuBadge");
     badge.hidden = !d.total; badge.textContent = d.total > 99 ? "99+" : String(d.total);
     badge.title = d.overdue ? `${d.overdue} callback(s) overdue` : "";
@@ -453,12 +441,12 @@
       later: '<span class="pill">Later</span>', none: '<span class="pill">No time set</span>' };
     $("#fuGroups").innerHTML = d.groups.map((g) => `<div class="fu-group"><div class="fu-head"><h3>${esc(g.label)}</h3><span class="pill ${g.count ? (g.key === "callback" && d.overdue ? "crit" : "warn") : "good"}">${num(g.count)}</span></div>
       <p class="fu-hint">${esc(g.hint)}${g.count > g.items.length ? ` Showing the first ${g.items.length}.` : ""}</p>
-      ${g.items.length ? `<div class="tbl-wrap"><table><thead><tr><th>Client</th><th>Number</th>${g.key === "callback" ? "<th>Due</th>" : ""}<th>Last call</th><th>Result</th>${admin ? "<th>Summary</th>" : ""}</tr></thead><tbody>${g.items.map((x) => `<tr class="click" tabindex="0" data-vcall="${esc(x.call_id)}">
-        <td>${admin && x.name ? `<b>${esc(x.name)}</b><br><span class="muted num">${esc(x.lead_id)}</span>` : `<span class="num">${esc(x.lead_id)}</span>`}</td>
+      ${g.items.length ? `<div class="tbl-wrap"><table><thead><tr><th>Client</th><th>Number</th>${g.key === "callback" ? "<th>Due</th>" : ""}<th>Last call</th><th>Result</th><th>Summary</th></tr></thead><tbody>${g.items.map((x) => `<tr class="click" tabindex="0" data-vcall="${esc(x.call_id)}">
+        <td>${x.name ? `<b>${esc(x.name)}</b><br><span class="muted num">${esc(x.lead_id)}</span>` : `<span class="num">${esc(x.lead_id)}</span>`}</td>
         <td class="num muted">${esc(x.number || "–")}</td>
-        ${g.key === "callback" ? `<td>${whenPill[x.when] || ""} <span class="num">${x.due ? esc(when(x.due)) : admin && x.callback_text ? `“${esc(x.callback_text)}”` : ""}</span></td>` : ""}
+        ${g.key === "callback" ? `<td>${whenPill[x.when] || ""} <span class="num">${x.due ? esc(when(x.due)) : x.callback_text ? `“${esc(x.callback_text)}”` : ""}</span></td>` : ""}
         <td class="num muted">${esc(when(x.last_ts))}</td><td>${esc(x.last_label)}${x.interest ? ` <span class="pill ${x.interest === "hot" ? "crit" : ""}">${esc(x.interest)}</span>` : ""}</td>
-        ${admin ? `<td class="muted">${esc(x.summary || "–")}</td>` : ""}</tr>`).join("")}</tbody></table></div>` : '<p class="fu-empty">Nobody right now.</p>'}</div>`).join("");
+        <td class="muted">${esc(x.summary || "–")}</td></tr>`).join("")}</tbody></table></div>` : '<p class="fu-empty">Nobody right now.</p>'}</div>`).join("");
   }
 
   // ---------- calls grouped by client ----------
@@ -468,7 +456,6 @@
     $("#clFilters").innerHTML = chips.map(([n, l]) => `<button type="button" data-min="${n}" aria-pressed="${c.min === n}">${esc(l)}</button>`).join("");
     const qs = new URLSearchParams({ range: state.range, q: c.q, sort: c.sort, min_calls: c.min, offset: c.offset });
     const d = await api(`/api/voicecalls/clients?${qs}`);
-    const admin = state.me.role === "admin";
     const flags = (r) => [
       r.do_not_call && '<span class="pill crit">Do not call</span>',
       r.transferred && '<span class="pill good">Transferred</span>',
@@ -477,7 +464,7 @@
       r.attempts_7d > 2 && '<span class="pill warn">Over 2 this week</span>',
     ].filter(Boolean).join(" ") || '<span class="muted">–</span>';
     $("#clRows").innerHTML = d.items.map((r) => `<tr class="click" tabindex="0" data-client="${esc(r.lead_id)}">
-      <td>${admin && r.name ? `<b>${esc(r.name)}</b><br><span class="muted num">${esc(r.lead_id)}</span>` : `<span class="num">${esc(r.lead_id)}</span>`}</td>
+      <td>${r.name ? `<b>${esc(r.name)}</b><br><span class="muted num">${esc(r.lead_id)}</span>` : `<span class="num">${esc(r.lead_id)}</span>`}</td>
       <td class="num muted">${esc(r.number || "–")}</td>
       <td class="r num"><b>${num(r.calls)}</b></td><td class="r num">${num(r.reached)}</td>
       <td class="r num">${num(r.attempts_today)}</td><td class="r num">${num(r.attempts_7d)}</td>
@@ -500,11 +487,9 @@
 
   async function openVoiceCall(id) {
     const c = await api(`/api/voicecalls/call?id=${encodeURIComponent(id)}`);
-    const admin = state.me.role === "admin";
     const box = (k, v) => `<div><span>${esc(k)}</span><b>${v}</b></div>`;
     const row = (k, v) => `<div class="li"><div>${esc(k)}</div><span>${v}</span></div>`;
-    const adminOnly = (what) => `<div class="note">${esc(what)} visible to admins only.</div>`;
-    $("#dTitle").textContent = admin && c.lead_name ? `${c.lead_name} · ${c.classification_label}` : `${c.lead_id} · ${c.classification_label}`;
+    $("#dTitle").textContent = c.lead_name ? `${c.lead_name} · ${c.classification_label}` : `${c.lead_id} · ${c.classification_label}`;
     $("#dMeta").innerHTML = [when(c.ts), c.room, c.models.llm && `${c.models.llm}${c.served_by ? ` on ${c.served_by}` : ""}`, c.models.stt, c.models.tts].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
 
     // what the CRM says about the lead after this call: the CRM log first, then older records' actions
@@ -526,43 +511,39 @@
       box("Label", esc(c.classification_label)), box("CRM", crmLabel), box("Phone line", esc(c.line_label)), box("Call length", dur(c.duration_seconds)),
     ].join("") + `</div>`;
     ov += `<div class="block"><h4>Client</h4><div class="list">` +
-      (admin ? row("Name", esc(c.lead_name || "–")) : "") +
+      row("Name", esc(c.lead_name || "–")) +
       row("Lead ID", `<span class="num">${esc(c.lead_id)}</span>`) +
       (c.line && c.line.number ? row("Phone", `<span class="num">${esc(c.line.number)}</span>`) : "") +
       row("Status", statusBefore != null && statusAfter !== statusBefore ? `${esc(human(statusBefore))} → <b>${esc(human(statusAfter))}</b>` : esc(human(statusAfter))) +
-      (admin ? Object.keys(LEAD_FIELDS).filter((k) => k !== "status" && after[k] != null && after[k] !== "").map((k) => row(LEAD_FIELDS[k], esc(leadValue(k, after[k])))).join("") : "") +
-      `</div>${admin ? "" : adminOnly("The client's name and what they told the agent are")}</div>`;
+      Object.keys(LEAD_FIELDS).filter((k) => k !== "status" && after[k] != null && after[k] !== "").map((k) => row(LEAD_FIELDS[k], esc(leadValue(k, after[k])))).join("") +
+      `</div></div>`;
     ov += `<div class="block"><h4>How it went</h4><div class="list">` +
       row("Ended", esc(c.ended_by_label)) +
       row("Asked for a person", c.transfer ? (c.transfer.ok ? `Transferred to ${esc(c.transfer.to || "a person")}` : "Asked, not transferred") : "No") +
       row("Recording", c.recording ? (c.recording.ok ? "Saved" : '<span class="pill crit">Failed</span>') : "–") +
       row("Errors", c.error_count ? `<span class="pill crit">${num(c.error_count)}</span>` : "None") +
       `</div></div>`;
-    if (admin && c.summary) ov += `<div class="block"><h4>Summary for the sales team</h4><div class="text answer">${esc(c.summary)}</div></div>`;
-    else if (admin) ov += `<div class="note">No summary was saved for this call.</div>`;
+    if (c.summary) ov += `<div class="block"><h4>Summary for the sales team</h4><div class="text answer">${esc(c.summary)}</div></div>`;
+    else ov += `<div class="note">No summary was saved for this call.</div>`;
 
     // ---- Conversation ----
-    const conv = admin
-      ? `<div class="tx">${(c.transcript || []).map((t) => `<div class="line ${t.role === "agent" ? "agent" : "lead"}"><small>${t.role === "agent" ? "Agent" : "Client"}</small>${esc(t.text)}</div>`).join("") || '<div class="muted">No conversation.</div>'}</div>`
-      : adminOnly("The conversation is");
+    const conv = `<div class="tx">${(c.transcript || []).map((t) => `<div class="line ${t.role === "agent" ? "agent" : "lead"}"><small>${t.role === "agent" ? "Agent" : "Client"}</small>${esc(t.text)}</div>`).join("") || '<div class="muted">No conversation.</div>'}</div>`;
 
     // ---- CRM ----
     const crmFields = (x) => {
-      if (admin && x.changed && Object.keys(x.changed).length) return `<div class="list">${Object.entries(x.changed).map(([k, v]) =>
+      if (x.changed && Object.keys(x.changed).length) return `<div class="list">${Object.entries(x.changed).map(([k, v]) =>
         `<div class="li"><div>${esc(LEAD_FIELDS[k] || human(k))}</div><span class="chg"><span class="muted">${esc(v.before ?? "–")}</span> → <b>${esc(v.after ?? "–")}</b></span></div>`).join("")}</div>`;
       const f = (x.fields || []).map((k) => LEAD_FIELDS[k] || human(k));
       return `<div class="muted">${esc(f.length ? f.join(", ") : "No fields changed.")}</div>`;
     };
     let crmHtml = crm.length
-      ? `<div class="crm-list">${crm.map((x) => `<div class="crm-item"><div class="crm-head"><span class="num muted">${esc((x.ts || "").slice(11, 19))}</span><b>${esc(human(x.action || "change"))}</b><span class="muted">${x.source === "post_call" ? "Post-call check" : "Agent, during the call"}</span>${x.ok ? '<span class="pill good">Saved</span>' : '<span class="pill crit">Failed</span>'}</div>${crmFields(x)}${!x.ok && admin && x.error ? `<div class="note">${esc(x.error)}</div>` : ""}</div>`).join("")}</div>` + (admin ? "" : adminOnly("The values before and after are"))
+      ? `<div class="crm-list">${crm.map((x) => `<div class="crm-item"><div class="crm-head"><span class="num muted">${esc((x.ts || "").slice(11, 19))}</span><b>${esc(human(x.action || "change"))}</b><span class="muted">${x.source === "post_call" ? "Post-call check" : "Agent, during the call"}</span>${x.ok ? '<span class="pill good">Saved</span>' : '<span class="pill crit">Failed</span>'}</div>${crmFields(x)}${!x.ok && x.error ? `<div class="note">${esc(x.error)}</div>` : ""}</div>`).join("")}</div>`
       : `<div class="note">No CRM changes were logged for this call.</div>`;
-    if (admin && Object.keys(c.filled_after_call || {}).length) crmHtml += `<div class="block"><h4>Filled in after the call</h4><div class="code">${esc(Object.entries(c.filled_after_call).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
-    if (admin && (c.disagreements || []).length) crmHtml += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
+    if (Object.keys(c.filled_after_call || {}).length) crmHtml += `<div class="block"><h4>Filled in after the call</h4><div class="code">${esc(Object.entries(c.filled_after_call).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div></div>`;
+    if ((c.disagreements || []).length) crmHtml += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
 
     // ---- Tools ----
-    const tools = admin
-      ? ((c.tool_calls || []).length ? `<div class="tx">${c.tool_calls.map((t) => `<div class="line tool ${t.is_error ? "bad" : ""}">${t.is_error ? "✗" : "✓"} ${esc(t.name)}(${esc(t.arguments || "")}) → ${esc(t.output || "")} <span class="muted">· ${esc((t.at || "").slice(11, 19))}</span></div>`).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>')
-      : `<div class="note">${num(c.tool_call_count)} tool call(s). What they sent and got back is visible to admins only.</div>`;
+    const tools = ((c.tool_calls || []).length ? `<div class="tx">${c.tool_calls.map((t) => `<div class="line tool ${t.is_error ? "bad" : ""}">${t.is_error ? "✗" : "✓"} ${esc(t.name)}(${esc(t.arguments || "")}) → ${esc(t.output || "")} <span class="muted">· ${esc((t.at || "").slice(11, 19))}</span></div>`).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>');
 
     // ---- Speed ----
     let speed = `<div class="d-sum">` + [
@@ -579,7 +560,7 @@
       row("Speech-to-text (STT)", `<span class="num">${esc(mo.stt || "–")}</span>`) +
       row("Text-to-speech (TTS)", `<span class="num">${esc(mo.tts || "–")}</span>${mo.tts_voice || mo.voice ? ` <span class="muted">· voice ${esc(mo.tts_voice || mo.voice)}</span>` : ""}`) +
       `</div></div>`;
-    if ((c.errors || []).length) tech += `<div class="block"><h4>Errors (${c.errors.length})</h4><div class="tx">${c.errors.map((e) => `<div class="line tool bad">✗ <b>${esc(e.stage_label || e.stage)}</b> <span class="muted">· ${esc((e.at || "").slice(11, 19))}${e.recoverable === true ? " · recovered" : ""}</span>${e.error ? `<br>${esc(e.error)}` : ""}</div>`).join("")}</div>${admin ? "" : '<div class="muted">Error messages are visible to admins only.</div>'}</div>`;
+    if ((c.errors || []).length) tech += `<div class="block"><h4>Errors (${c.errors.length})</h4><div class="tx">${c.errors.map((e) => `<div class="line tool bad">✗ <b>${esc(e.stage_label || e.stage)}</b> <span class="muted">· ${esc((e.at || "").slice(11, 19))}${e.recoverable === true ? " · recovered" : ""}</span>${e.error ? `<br>${esc(e.error)}` : ""}</div>`).join("")}</div></div>`;
     if (c.line) tech += `<div class="note"><b>Phone line:</b> ${esc(c.line.label || c.line_label)} · SIP ${esc(c.line.sip_status_code ?? "–")} ${esc(c.line.sip_status || "")} · rang ${secs(c.line.ring_seconds)}</div>`;
     if (c.recording) tech += `<div class="note"><b>Recording:</b> ${c.recording.ok ? `${esc(c.recording.file)} (${esc(c.recording.storage || "")})` : `not recorded: ${esc(c.recording.error || "")}`}</div>`;
     if (c.transfer) tech += `<div class="note"><b>Transfer:</b> ${c.transfer.ok ? `to ${esc(c.transfer.to)}` : `failed (${esc(c.transfer.error || "")})`}${c.transfer.reason ? ` · reason: ${esc(c.transfer.reason)}` : ""}</div>`;
@@ -686,7 +667,6 @@
   }
   const renderers = { overview: renderOverview, whatsapp: renderWhatsApp, calls: renderVoiceCalls, logins: renderLogins };
   async function go(page) {
-    if (page === "logins" && state.me.role !== "admin") page = "overview";
     state.page = page;
     $$("[data-view]").forEach((v) => (v.hidden = v.dataset.view !== page));
     $$(".nav button").forEach((b) => (b.dataset.page === page ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
@@ -789,8 +769,7 @@
     try {
       state.me = await api("/api/me");
     } catch (e) { showError(e); return; }
-    $("#whoami").textContent = `${state.me.name} · ${state.me.role}`;
-    if (state.me.role !== "admin") $$("[data-admin]").forEach((b) => (b.hidden = true));
+    $("#whoami").textContent = state.me.name;
     let page = "overview";
     try { const t = JSON.parse(localStorage.getItem("evdash-tabs") || "{}"); if (t && typeof t === "object") state.tab = t; } catch (e) { /* storage blocked */ }
     try { const p = localStorage.getItem("evdash-page"); if (p && renderers[p]) page = p; } catch (e) { /* storage blocked */ }

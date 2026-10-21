@@ -16,7 +16,7 @@ class StepsTests(unittest.TestCase):
             row = next(r for r in src.questions(None, NOW) if r["id"] == 1)
             self.assertEqual(row["language"], "en")
             self.assertEqual(row["details"]["tokens_in"], 1250)
-            item = src.question(1, show_text=False)
+            item = src.question(1)
             self.assertEqual(item["details"]["answer_type"], "crm_data")
             self.assertEqual(item["details"]["finish"], "submit_answer")
             self.assertNotIn("language", item["details"])
@@ -31,5 +31,5 @@ class StepsTests(unittest.TestCase):
             rows = src.questions(None, NOW)
             self.assertTrue(rows)
             self.assertEqual({r["language"] for r in rows}, {"en", "ar"})  # still guessed from the text
-            self.assertEqual(src.question(1, show_text=True)["details"], {})
+            self.assertEqual(src.question(1)["details"], {})
             self.assertEqual(src.steps(1), [])

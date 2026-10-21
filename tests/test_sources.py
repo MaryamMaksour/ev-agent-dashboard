@@ -54,20 +54,17 @@ class WhatsAppTests(unittest.TestCase):
         self.assertFalse(rows["List every EOI"]["asked_again"])
         self.assertEqual(rows["مرحبا"]["language"], "ar")
 
-    def test_viewer_never_gets_text(self):
-        page = self.src.question_list(30, show_text=False, now=NOW)
+    def test_question_text_is_included(self):
+        page = self.src.question_list(30, now=NOW)
         self.assertTrue(page["items"])
-        self.assertTrue(all(i["question"] is None for i in page["items"]))
-        qid = page["items"][0]["id"]
-        item = self.src.question(qid, show_text=False)
-        self.assertIsNone(item["answer"])
-        self.assertIsNone(item["ip"])
-        self.assertIsNotNone(self.src.question(qid, show_text=True)["answer"])
+        self.assertTrue(all(i["question"] for i in page["items"]))
+        item = self.src.question(page["items"][0]["id"])
+        self.assertIsNotNone(item["answer"])
 
     def test_filters(self):
-        self.assertEqual(self.src.question_list(30, show_text=True, outcome="failed", now=NOW)["total"], 1)
-        self.assertEqual(self.src.question_list(30, show_text=True, flag="slow", now=NOW)["total"], 2)
-        self.assertEqual(self.src.question_list(30, show_text=True, q="lume", now=NOW)["total"], 2)
+        self.assertEqual(self.src.question_list(30, outcome="failed", now=NOW)["total"], 1)
+        self.assertEqual(self.src.question_list(30, flag="slow", now=NOW)["total"], 2)
+        self.assertEqual(self.src.question_list(30, q="lume", now=NOW)["total"], 2)
 
     def test_logins_and_conversations(self):
         lg = self.src.login_summary(30, NOW)
@@ -90,18 +87,15 @@ class WhatsAppTests(unittest.TestCase):
         self.assertEqual(s["by_system"], [{"name": "Zoho CRM", "count": 1}])
         self.assertEqual(sum(d["value"] for d in s["per_day"]), 3)
         self.assertEqual(self.src.error_summary(None, NOW)["totals"]["errors"], 4)
-        page = self.src.error_list(30, show_text=True, kind="claude_api", now=NOW)
+        page = self.src.error_list(30, kind="claude_api", now=NOW)
         self.assertEqual(page["total"], 1)
         self.assertEqual(page["items"][0]["kind_label"], "Claude API error")
 
-    def test_viewer_never_gets_error_text(self):
-        page = self.src.error_list(None, show_text=False, now=NOW)
+    def test_error_text_is_included(self):
+        page = self.src.error_list(None, now=NOW)
         self.assertTrue(page["items"])
-        self.assertTrue(all(i["message"] is None and i["question"] is None for i in page["items"]))
-        item = self.src.error(page["items"][0]["id"], show_text=False)
-        self.assertIsNone(item["detail"])
-        self.assertIsNone(item["ip"])
-        self.assertIsNotNone(self.src.error(page["items"][0]["id"], show_text=True)["message"])
+        self.assertTrue(all(i["message"] for i in page["items"]))
+        self.assertIsNotNone(self.src.error(page["items"][0]["id"])["message"])
 
     def test_old_agent_without_error_log(self):
         import shutil

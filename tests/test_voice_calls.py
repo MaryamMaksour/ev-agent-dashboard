@@ -49,19 +49,17 @@ class VoiceCallTests(unittest.TestCase):
         self.assertEqual(s["slowest_stage"], [{"label": "LLM first word", "count": 1}])
         self.assertEqual(s["speech"]["round_trip"]["summary"]["verdict"], "NOT ENOUGH")
 
-    def test_viewer_gets_no_text(self):
-        c = public_call(self.src.call(ANSWERED), full=True, show_text=False)
-        for k in ("transcript", "tool_calls", "actions", "summary"):
-            self.assertIsNone(c[k])
-        self.assertNotIn("reason", c["transfer"])
-        self.assertTrue(c["turns"])  # timings are fine to show
-        run = self.src.speech_run(self.src.speech_runs()[0]["id"], show_text=False)
-        self.assertNotIn("transcript", run["items"][0])
+    def test_admin_gets_text(self):
+        c = public_call(self.src.call(ANSWERED), full=True)
+        self.assertTrue(c["transcript"])
+        self.assertTrue(c["turns"])
+        run = self.src.speech_run(self.src.speech_runs()[0]["id"])
+        self.assertIn("transcript", run["items"][0])
 
     def test_ids_are_checked(self):
         for bad in ("../x", "a/b", "", "..", "x.json/../../etc"):
             self.assertIsNone(self.src.call(bad))
-            self.assertIsNone(self.src.speech_run(bad, show_text=True))
+            self.assertIsNone(self.src.speech_run(bad))
 
     def test_hours(self):
         h = self.src.hours(None)
@@ -115,7 +113,6 @@ class VoiceCallTests(unittest.TestCase):
         self.assertEqual(by["L002"]["number"], "+97150*****02")           # masked, as the agent saved it
         self.assertEqual((by["L003"]["phone_calls"], by["L003"]["attempts_7d"]), (0, 0))  # browser test: no attempt
         self.assertTrue(by["L003"]["callback_requested"])
-        self.assertIsNone(by["L001"]["name"])                               # names only for admins
         self.assertEqual(self.src.clients(None, q="l002", now=now)["total"], 1)
         self.assertEqual(self.src.clients(None, min_calls=2, now=now)["total"], 0)
         self.assertEqual(self.src.clients(1, now=now.replace(hour=13))["total"], 2)  # only clients called in the period
@@ -177,7 +174,6 @@ class VoiceCallTests(unittest.TestCase):
         self.assertEqual([x["lead_id"] for x in g["hot"]["items"]], ["L6"])
         self.assertEqual([x["lead_id"] for x in g["llm_failure"]["items"]], ["L8"])
         self.assertEqual((f["total"], f["overdue"]), (7, 2))
-        self.assertIsNone(g["callback"]["items"][0]["name"])            # viewers: no names, no summaries
 
     def test_missing_folder(self):
         src = VoiceCallSource("/nonexistent", UAE)
@@ -218,7 +214,7 @@ class VoiceCallV2Tests(unittest.TestCase):
         self.assertEqual((s["by_model"][0]["model"], s["by_model"][0]["served_by"]), ("qwen3.5-9b", "vllm"))
 
     def test_llm_requests_and_crm_changes(self):
-        full = public_call(self.src.call(V2_CALL), full=True, show_text=True)
+        full = public_call(self.src.call(V2_CALL), full=True)
         stages = [r["stage"] for r in full["llm_requests"]]
         self.assertEqual(stages, ["call", "call", "post_call"])
         self.assertEqual(full["llm_requests"][1]["tools_called"], ["update_lead"])
@@ -228,25 +224,8 @@ class VoiceCallV2Tests(unittest.TestCase):
         self.assertEqual([x["source"] for x in crm], ["call", "post_call", "post_call"])
         self.assertEqual(crm[0]["changed"]["budget"], {"before": None, "after": 2000000})
         self.assertEqual((full["lead_name"], full["lead_status_before"]), ("Omar Test", "new"))
-        self.assertEqual(self.src.clients(None, show_names=True)["items"][0]["name"], "Omar Test")
-        self.assertEqual(self.src.client_calls(full["lead_id"], show_names=True)["name"], "Omar Test")
-        self.assertIsNone(self.src.client_calls(full["lead_id"])["name"])
-
-    def test_viewer_gets_no_text_from_new_fields(self):
-        v = public_call(self.src.call(V2_CALL), full=True, show_text=False)
-        self.assertNotIn("error", v["errors"][0])               # which stage failed: yes; the message: no
-        self.assertEqual(v["errors"][0]["stage"], "tts")
-        for r in v["llm_requests"]:
-            for k in ("reply", "tool_calls", "error", "messages"):
-                self.assertNotIn(k, r)
-        for x in v["crm_changes"]:
-            self.assertNotIn("changed", x)                       # field names only, no values
-        self.assertEqual(v["crm_changes"][0]["fields"], ["budget", "property_type"])
-        self.assertIsNone(v["lead_name"])                        # the lead's name: admins only
-        self.assertEqual(v["lead_status_before"], "new")
-        dumped = json.dumps(v)
-        for secret in ("SECRET PROMPT TEXT", "Is this Omar", "Omar Test", "Dubai Hills", "2 million"):
-            self.assertNotIn(secret.lower(), dumped.lower())
+        self.assertEqual(self.src.clients(None)["items"][0]["name"], "Omar Test")
+        self.assertEqual(self.src.client_calls(full["lead_id"])["name"], "Omar Test")
 
 
 if __name__ == "__main__":

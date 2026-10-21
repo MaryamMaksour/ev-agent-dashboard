@@ -1,11 +1,11 @@
 """Manage dashboard users.
 
-    python manage_users.py add maryam --role admin --name "Maryam M."   # asks for the password
+    python manage_users.py add maryam --name "Maryam M."   # asks for the password
     python manage_users.py list
     python manage_users.py remove maryam
     python manage_users.py secret                                       # prints a new DASHBOARD_SECRET_KEY
 
-Roles: admin (sees question/answer text and transcripts), viewer (numbers and charts only).
+Every user is an admin and sees everything.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import os
 import secrets
 import sys
 
-from dashboard.auth import ROLES, UserStore, hash_password
+from dashboard.auth import ROLE, UserStore, hash_password
 from dashboard.settings import Settings, load_dotenv
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -29,7 +29,6 @@ def main() -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("add", help="add a user or reset their password")
     a.add_argument("username")
-    a.add_argument("--role", choices=ROLES, default="viewer")
     a.add_argument("--name", default="")
     r = sub.add_parser("remove", help="remove a user")
     r.add_argument("username")
@@ -47,7 +46,7 @@ def main() -> int:
         if not users:
             print("No users yet.")
         for name, u in sorted(users.items()):
-            print(f"{name:<20} {u.get('role'):<7} {u.get('name', '')}")
+            print(f"{name:<20} {u.get('name', '')}")
         return 0
     username = args.username.strip().lower()
     if args.cmd == "remove":
@@ -65,9 +64,9 @@ def main() -> int:
     if getpass.getpass("Repeat it: ") != password:
         print("The two passwords don't match.")
         return 1
-    users[username] = {"name": args.name or username, "role": args.role, "password": hash_password(password)}
+    users[username] = {"name": args.name or username, "role": ROLE, "password": hash_password(password)}
     store.save(users)
-    print(f"Saved {username} ({args.role}).")
+    print(f"Saved {username}.")
     return 0
 
 
