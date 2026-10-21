@@ -266,6 +266,21 @@
     const from = d.total ? w.offset + 1 : 0, to = Math.min(w.offset + 25, d.total);
     $("#waPager").innerHTML = `<span>${from}–${to} of ${num(d.total)}</span><button type="button" data-p="-1" ${w.offset === 0 ? "disabled" : ""}>Newer</button><button type="button" data-p="1" ${to >= d.total ? "disabled" : ""}>Older</button>`;
   }
+  // one tool call as a card: what the model sent, and what came back (the result, or the error)
+  const prettyJson = (v) => {
+    if (v == null || v === "") return "";
+    let o = v;
+    if (typeof v === "string") { try { o = JSON.parse(v); } catch (e) { return v; } }
+    return typeof o === "string" ? o : JSON.stringify(o, null, 2);
+  };
+  const toolCard = ({ name, system, at, seconds, ok, sent, back, backLabel, note }) =>
+    `<div class="toolcard ${ok ? "" : "bad"}"><div class="tc-head"><b>${esc(name)}</b>${system ? `<span class="muted">${esc(system)}</span>` : ""}` +
+    `<span class="muted num">${[at, seconds != null ? secs(seconds) : ""].filter(Boolean).map(esc).join(" · ")}</span>` +
+    `<span class="pill ${ok ? "good" : "crit"}">${ok ? "Worked" : "Failed"}</span></div>` +
+    `<div class="tc-label">Sent to the tool</div><div class="code">${esc(prettyJson(sent) || "(nothing)")}</div>` +
+    `<div class="tc-label">${esc(backLabel || (ok ? "Result" : "Error"))}</div><div class="code">${esc(prettyJson(back) || "(nothing returned)")}</div>` +
+    `${note ? `<div class="muted tc-note">${esc(note)}</div>` : ""}</div>`;
+
   async function openQuestion(id) {
     const r = await api(`/api/whatsapp/question?id=${encodeURIComponent(id)}`);
     $("#dTitle").textContent = r.question;
@@ -286,11 +301,13 @@
       b += `<div class="note">This question was answered before the detailed log was switched on, so tokens, confidence and steps were not saved.</div>`;
     }
     if (r.steps && r.steps.length) {
-      b += `<div class="block"><h4>Steps</h4><div class="code">${esc(r.steps.map((s) => s.type === "model"
-        ? `Model call ${s.n} · ${secs(s.seconds)} · ${num(s.in)} in / ${num(s.out)} out${s.tools && s.tools.length ? ` · asked for ${s.tools.join(", ")}` : ""}${s.text ? `
-    ${s.text.replace(/\s+/g, " ").slice(0, 300)}` : ""}`
-        : `Tool ${s.tool}${s.system ? ` (${s.system})` : ""} · ${secs(s.seconds)} · ${s.ok ? `${num(s.rows)} rows${s.more ? ", more available" : ""}` : `FAILED: ${s.error}`}
-    ${JSON.stringify(s.input || {}).slice(0, 300)}`).join("\n"))}</div></div>`;
+      const failedTools = r.steps.filter((s) => s.type !== "model" && !s.ok).length;
+      b += `<div class="block"><h4>Steps${failedTools ? ` · ${failedTools} tool${failedTools > 1 ? "s" : ""} failed` : ""}</h4><div class="steps">${r.steps.map((s) => s.type === "model"
+        ? `<div class="step-model"><b>Model call ${esc(s.n)}</b> <span class="muted num">· ${esc(secs(s.seconds))} · ${esc(num(s.in))} in / ${esc(num(s.out))} out${s.tools && s.tools.length ? ` · asked for ${esc(s.tools.join(", "))}` : ""}</span>${s.text ? `<div class="muted">${esc(s.text.replace(/\s+/g, " ").slice(0, 300))}</div>` : ""}</div>`
+        : toolCard({ name: s.tool, system: s.system, seconds: s.seconds, ok: s.ok, sent: s.input,
+          back: s.ok ? `${num(s.rows)} row${s.rows === 1 ? "" : "s"} came back${s.more ? " (more available)" : ""}` : s.error,
+          backLabel: s.ok ? "Result" : "Error",
+          note: s.ok ? "WhatsApp AI saves only how many rows came back, not the data itself." : "" })).join("")}</div></div>`;
     }
     openDrawer(b);
   }
@@ -543,7 +560,8 @@
     if ((c.disagreements || []).length) crmHtml += `<div class="block"><h4>Agent and post-call check disagreed</h4><div class="code">${esc(c.disagreements.map((x) => JSON.stringify(x)).join("\n"))}</div></div>`;
 
     // ---- Tools ----
-    const tools = ((c.tool_calls || []).length ? `<div class="tx">${c.tool_calls.map((t) => `<div class="line tool ${t.is_error ? "bad" : ""}">${t.is_error ? "✗" : "✓"} ${esc(t.name)}(${esc(t.arguments || "")}) → ${esc(t.output || "")} <span class="muted">· ${esc((t.at || "").slice(11, 19))}</span></div>`).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>');
+    const tools = ((c.tool_calls || []).length ? `<div class="steps">${c.tool_calls.map((t) => toolCard({ name: t.name, at: (t.at || "").slice(11, 19), ok: !t.is_error, sent: t.arguments, back: t.output,
+      note: t.output && String(t.output).length >= 500 ? "The voice agent saves only the first 500 characters of a result." : "" })).join("")}</div>` : '<div class="muted">No tool calls recorded.</div>');
 
     // ---- Speed ----
     let speed = `<div class="d-sum">` + [
